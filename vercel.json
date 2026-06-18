@@ -1,0 +1,73 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "package.json",
+      "use": "@vercel/static-build",
+      "config": { "distDir": "dist" }
+    },
+    {
+      "src": "server/src/index.ts",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/cron/(.*)",
+      "dest": "server/src/index.ts"
+    },
+    {
+      "src": "/auth/(.*)",
+      "dest": "server/src/index.ts"
+    },
+    {
+      "src": "/users/(.*)",
+      "dest": "server/src/index.ts"
+    },
+    {
+      "src": "/employees/(.*)",
+      "dest": "server/src/index.ts"
+    },
+    {
+      "src": "/checkins/(.*)",
+      "dest": "server/src/index.ts"
+    },
+    {
+      "src": "/reports/(.*)",
+      "dest": "server/src/index.ts"
+    },
+    {
+      "src": "/analytics/(.*)",
+      "dest": "server/src/index.ts"
+    },
+    {
+      "src": "/settings/(.*)",
+      "dest": "server/src/index.ts"
+    },
+    {
+      "src": "/health",
+      "dest": "server/src/index.ts"
+    },
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/cron/morning",
+      "schedule": "30 3 * * 1-5"
+    },
+    {
+      "path": "/cron/afternoon",
+      "schedule": "30 10 * * 1-5"
+    },
+    {
+      "path": "/cron/monthly-report",
+      "schedule": "0 0 1 * *"
+    }
+  ]
+}

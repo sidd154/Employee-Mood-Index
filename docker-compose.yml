@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: mood_index_db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./supabase/migrations/20260610000000_schema.sql:/docker-entrypoint-initdb.d/1-schema.sql
+      - ./supabase/seed.sql:/docker-entrypoint-initdb.d/2-seed.sql
+      - ./supabase/demo_seed.sql:/docker-entrypoint-initdb.d/3-demo-seed.sql
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: mood_index_server
+    restart: always
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/postgres
+      - JWT_SECRET=supersecretjwtsignkey123_change_in_prod
+      - JWT_REFRESH_SECRET=supersecretjwtrefreshkey456_change_in_prod
+      - RESEND_API_KEY=
+      - EMAIL_FROM=onboarding@resend.dev
+      - SUPER_ADMIN_EMAIL=admin@company.com
+      - SUPER_ADMIN_NAME=Super Admin
+      - FRONTEND_URL=http://localhost:5173
+    depends_on:
+      - db
+
+  client:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mood_index_client
+    restart: always
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:5000
+    depends_on:
+      - server
+
+volumes:
+  pgdata:
