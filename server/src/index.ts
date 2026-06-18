@@ -25,8 +25,11 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 app.use(helmet());
+const rawFrontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+const sanitizedFrontendUrl = rawFrontendUrl.replace(/\/$/, '');
+
 const allowedOrigins = [
-  process.env.FRONTEND_URL || 'http://localhost:5173',
+  sanitizedFrontendUrl,
   'http://localhost:5173',
   'http://localhost:5174'
 ];
