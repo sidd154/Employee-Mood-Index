@@ -24,26 +24,20 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-app.use(helmet());
-const rawFrontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-const sanitizedFrontendUrl = rawFrontendUrl.replace(/\/$/, '');
-
-const allowedOrigins = [
-  sanitizedFrontendUrl,
-  'http://localhost:5173',
-  'http://localhost:5174'
-];
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  })
+);
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
-      }
+      // Dynamically allow the requesting origin to prevent CORS blocks in serverless deployments
+      callback(null, true);
     },
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
   })
 );
 app.use(express.json());
