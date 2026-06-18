@@ -43,6 +43,8 @@ export const AdminDashboard: React.FC = () => {
   const [domains, setDomains] = useState<any[]>([]);
   const [newDomain, setNewDomain] = useState('');
   const [savingSettings, setSavingSettings] = useState(false);
+  const [newDeptName, setNewDeptName] = useState('');
+  const [savingDept, setSavingDept] = useState(false);
 
   // User accounts (Super Admin only)
   const [usersList, setUsersList] = useState<any[]>([]);
@@ -237,6 +239,55 @@ export const AdminDashboard: React.FC = () => {
 
       if (res.ok) {
         setDomains(prev => prev.filter(d => d.id !== id));
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleCreateDept = async () => {
+    if (!newDeptName.trim() || !accessToken) return;
+    setSavingDept(true);
+    try {
+      const res = await fetch(`${API_URL}/settings/departments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ name: newDeptName.trim() }),
+      });
+
+      if (res.ok) {
+        const added = await res.json();
+        setDepartments(prev => [...prev, added]);
+        setNewDeptName('');
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Failed to add department');
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSavingDept(false);
+    }
+  };
+
+  const handleDeleteDept = async (id: string) => {
+    if (!accessToken) return;
+    if (!confirm('Are you sure you want to delete this department? Employees in this department will be reassigned.')) return;
+    try {
+      const res = await fetch(`${API_URL}/settings/departments/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      });
+
+      if (res.ok) {
+        setDepartments(prev => prev.filter((d) => d.id !== id));
+      } else {
+        alert('Failed to delete department');
       }
     } catch (err) {
       console.error(err);
@@ -1289,50 +1340,97 @@ export const AdminDashboard: React.FC = () => {
                         </button>
                       </form>
                     </div>
-                  </div>
-
-                  {/* Allowed domains list */}
-                  <div className="space-y-6">
-                    <div>
-                      <h2 className="text-xl font-bold text-white">Allowed Domain Management</h2>
-                      <p className="text-xs text-slate-400 mt-1">Only employees with domains listed here can sign up</p>
-                    </div>
-
-                    <div className="glass p-6 rounded-2xl border border-slate-900 space-y-6">
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          placeholder="company.com"
-                          value={newDomain}
-                          onChange={(e) => setNewDomain(e.target.value)}
-                          className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-4 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
-                        />
-                        <button
-                          onClick={handleAddDomain}
-                          className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl text-xs font-semibold"
-                        >
-                          Add Domain
-                        </button>
+                            {/* Allowed domains and departments column */}
+                  <div className="space-y-8">
+                    {/* Allowed domains list */}
+                    <div className="space-y-6">
+                      <div>
+                        <h2 className="text-xl font-bold text-white">Allowed Domain Management</h2>
+                        <p className="text-xs text-slate-400 mt-1">Only employees with domains listed here can sign up</p>
                       </div>
 
-                      <div className="space-y-2 max-h-[200px] overflow-y-auto pr-1">
-                        {domains.map((dom) => (
-                          <div key={dom.id} className="flex justify-between items-center bg-slate-900/50 border border-slate-900 px-4 py-2.5 rounded-xl">
-                            <span className="text-xs text-slate-200">{dom.domain}</span>
-                            <button
-                              onClick={() => handleDeleteDomain(dom.id)}
-                              className="text-red-500 hover:text-red-400 text-xs font-semibold"
-                            >
-                              Remove
-                            </button>
-                          </div>
-                        ))}
-                        {domains.length === 0 && (
-                          <p className="text-xs text-slate-500 text-center py-6">No domains configured.</p>
-                        )}
+                      <div className="glass p-6 rounded-2xl border border-slate-900 space-y-6">
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            placeholder="company.com"
+                            value={newDomain}
+                            onChange={(e) => setNewDomain(e.target.value)}
+                            className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-4 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                          />
+                          <button
+                            onClick={handleAddDomain}
+                            className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl text-xs font-semibold"
+                          >
+                            Add Domain
+                          </button>
+                        </div>
+
+                        <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
+                          {domains.map((dom) => (
+                            <div key={dom.id} className="flex justify-between items-center bg-slate-900/50 border border-slate-900 px-4 py-2.5 rounded-xl">
+                              <span className="text-xs text-slate-200">{dom.domain}</span>
+                              <button
+                                onClick={() => handleDeleteDomain(dom.id)}
+                                className="text-red-500 hover:text-red-400 text-xs font-semibold"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          ))}
+                          {domains.length === 0 && (
+                            <p className="text-xs text-slate-500 text-center py-6">No domains configured.</p>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
+
+                    {/* Department list management */}
+                    <div className="space-y-6">
+                      <div>
+                        <h2 className="text-xl font-bold text-white">Department Management</h2>
+                        <p className="text-xs text-slate-400 mt-1">Add or remove organization departments</p>
+                      </div>
+
+                      <div className="glass p-6 rounded-2xl border border-slate-900 space-y-6">
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            placeholder="e.g. Operations"
+                            value={newDeptName}
+                            onChange={(e) => setNewDeptName(e.target.value)}
+                            className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-4 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                          />
+                          <button
+                            onClick={handleCreateDept}
+                            disabled={savingDept}
+                            className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl text-xs font-semibold disabled:opacity-50"
+                          >
+                            {savingDept ? 'Adding...' : 'Add Department'}
+                          </button>
+                        </div>
+
+                        <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
+                          {departments.map((dept) => (
+                            <div key={dept.id} className="flex justify-between items-center bg-slate-900/50 border border-slate-900 px-4 py-2.5 rounded-xl">
+                              <span className="text-xs text-slate-200">{dept.name}</span>
+                              {dept.name !== 'Other' && (
+                                <button
+                                  onClick={() => handleDeleteDept(dept.id)}
+                                  className="text-red-500 hover:text-red-400 text-xs font-semibold"
+                                >
+                                  Remove
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                          {departments.length === 0 && (
+                            <p className="text-xs text-slate-500 text-center py-6">No departments configured.</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>          </div>
                 </div>
               )}
 

@@ -156,3 +156,61 @@ export const deleteDomain = async (req: AuthenticatedRequest, res: Response) => 
     res.status(500).json({ error: 'Internal server error' });
   }
 };
+
+export const addDepartment = async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+  const { name } = req.body;
+
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: 'Department name is required' });
+  }
+
+  try {
+    const nameTrimmed = name.trim();
+
+    const checkRes = await query('SELECT 1 FROM departments WHERE LOWER(name) = $1', [nameTrimmed.toLowerCase()]);
+    if (checkRes.rows.length > 0) {
+      return res.status(400).json({ error: 'Department already exists' });
+    }
+
+    const insertRes = await query(
+      'INSERT INTO departments (name) VALUES ($1) RETURNING *',
+      [nameTrimmed]
+    );
+
+    await logAudit(req.user.id, 'department_added', { department: nameTrimmed });
+
+    res.status(201).json({
+      id: insertRes.rows[0].id,
+      name: insertRes.rows[0].name,
+      employeeCount: 0,
+      moodIndex: 0,
+      participationRate: 0,
+    });
+  } catch (error: any) {
+    console.error('Add department error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const deleteDepartment = async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+  const { id } = req.params;
+
+  try {
+    const getDeptRes = await query('SELECT name FROM departments WHERE id = $1', [id]);
+    if (getDeptRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Department not found' });
+    }
+
+    const deptName = getDeptRes.rows[0].name;
+
+    await query('DELETE FROM departments WHERE id = $1', [id]);
+    await logAudit(req.user.id, 'department_deleted', { department: deptName });
+
+    res.json({ message: 'Department deleted successfully', id, department: deptName });
+  } catch (error: any) {
+    console.error('Delete department error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
