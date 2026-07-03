@@ -1,4 +1,5 @@
 import express from 'express';
+import path from 'path';
 // Reload trigger comment to refresh environment variables
 
 import cors from 'cors';
@@ -63,6 +64,24 @@ app.use('/reports', reportsRoutes);
 app.use('/analytics', analyticsRoutes);
 app.use('/settings', settingsRoutes);
 app.use('/cron', cronRoutes);
+
+// Serve static assets in production
+const distPath = path.join(__dirname, '../../dist');
+app.use(express.static(distPath));
+
+// For SPA routing, redirect non-API requests to index.html
+app.get('*', (req, res, next) => {
+  const apiPrefixes = ['/auth', '/users', '/employees', '/checkins', '/reports', '/analytics', '/settings', '/cron', '/health'];
+  const isApi = apiPrefixes.some(prefix => req.path.startsWith(prefix));
+  if (isApi) {
+    return next();
+  }
+  res.sendFile(path.join(distPath, 'index.html'), (err) => {
+    if (err) {
+      res.status(404).send('Not found');
+    }
+  });
+});
 
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error('Unhandled server error:', err);
