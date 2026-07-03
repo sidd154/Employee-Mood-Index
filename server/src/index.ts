@@ -167,7 +167,7 @@ async function initializeDatabase() {
           ('reminder_time', '09:00'),
           ('afternoon_reminder_time', '16:00'),
           ('company_logo_url', ''),
-          ('email_configuration', '{"from": "marketing@pixel-studios.com"}')
+          ('email_configuration', '{"from": "admin@pixelavatar.com"}')
       `);
     } else {
       // Check if afternoon_reminder_time key exists, if not, insert it
@@ -175,8 +175,8 @@ async function initializeDatabase() {
       if (afternoonCheck.rows.length === 0) {
         await query("INSERT INTO settings (key, value) VALUES ('afternoon_reminder_time', '16:00')");
       }
-      // Force update email_configuration to use marketing@pixel-studios.com
-      await query("UPDATE settings SET value = '{\"from\": \"marketing@pixel-studios.com\"}' WHERE key = 'email_configuration'");
+      // Force update email_configuration to use admin@pixelavatar.com
+      await query("UPDATE settings SET value = '{\"from\": \"admin@pixelavatar.com\"}' WHERE key = 'email_configuration'");
     }
 
     // Merge roles table: merge super_admin into admin

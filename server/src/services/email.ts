@@ -11,8 +11,8 @@ const transporter = nodemailer.createTransport({
   port: parseInt(process.env.SMTP_PORT || '465'),
   secure: process.env.SMTP_PORT !== '587', // true for 465, false for other ports
   auth: {
-    user: process.env.SMTP_USER || 'marketing@pixel-studios.com',
-    pass: process.env.SMTP_PASS || 'psdztkgglbtzqdrg',
+    user: process.env.SMTP_USER || 'admin@pixelavatar.com',
+    pass: process.env.SMTP_PASS || 'drxfpxvsnzsnadjg',
   },
 });
 
@@ -23,7 +23,7 @@ export const sendEmail = async (options: {
   attachments?: any[];
   emailType: 'OTP' | 'Reminder_9AM' | 'Reminder_4PM' | 'Report';
 }) => {
-  let fromEmail = process.env.EMAIL_FROM || 'marketing@pixel-studios.com';
+  let fromEmail = process.env.EMAIL_FROM || 'admin@pixelavatar.com';
 
   try {
     // Fetch custom from sender email from database settings
