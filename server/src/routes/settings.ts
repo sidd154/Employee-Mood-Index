@@ -1,10 +1,11 @@
 import { Router } from 'express';
-import { getSettings, updateSettings, addDomain, deleteDomain, addDepartment, deleteDepartment } from '../controllers/settings';
+import { getSettings, updateSettings, addDomain, deleteDomain, addDepartment, deleteDepartment, getDepartments } from '../controllers/settings';
 import { authenticateToken, requireRole } from '../middleware/auth';
 
 const router = Router();
 
 router.get('/', authenticateToken, getSettings);
+router.get('/departments', authenticateToken, getDepartments);
 router.put('/', authenticateToken, requireRole(['admin']), updateSettings);
 router.post('/domains', authenticateToken, requireRole(['admin']), addDomain);
 router.delete('/domains/:id', authenticateToken, requireRole(['admin']), deleteDomain);

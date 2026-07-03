@@ -133,9 +133,12 @@ async function initializeDatabase() {
       `);
     }
 
-    const domainCheck = await query('SELECT count(*) as count FROM allowed_domains');
-    if (parseInt(domainCheck.rows[0].count) === 0) {
-      await query("INSERT INTO allowed_domains (domain) VALUES ('company.com'), ('localhost'), ('gmail.com')");
+    // Ensure standard domains are allowed
+    for (const d of ['company.com', 'localhost', 'gmail.com', 'pixel-studios.com', 'pixelavatar.com', 'pixelsoft.in']) {
+      const check = await query('SELECT 1 FROM allowed_domains WHERE LOWER(domain) = $1', [d.toLowerCase()]);
+      if (check.rows.length === 0) {
+        await query('INSERT INTO allowed_domains (domain) VALUES ($1)', [d]);
+      }
     }
 
     const feelingsCheck = await query('SELECT count(*) as count FROM feelings');

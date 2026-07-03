@@ -214,3 +214,13 @@ export const deleteDepartment = async (req: AuthenticatedRequest, res: Response)
     res.status(500).json({ error: 'Internal server error' });
   }
 };
+
+export const getDepartments = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const deptsRes = await query('SELECT id, name FROM departments ORDER BY name ASC');
+    res.json(deptsRes.rows);
+  } catch (error: any) {
+    console.error('Get departments error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};

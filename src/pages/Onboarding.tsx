@@ -12,33 +12,33 @@ interface Department {
 export const Onboarding: React.FC = () => {
   const { user, accessToken, completeOnboarding, onboardingRequired } = useAuth();
   const navigate = useNavigate();
-  const [fullName, setFullName] = useState('');
+  const [fullName, setFullName] = useState(user?.fullName || '');
   const [departmentId, setDepartmentId] = useState('');
-  const [departments] = useState<Department[]>([
-    { id: 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b11', name: 'Engineering' },
-    { id: 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b12', name: 'Sales' },
-    { id: 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b13', name: 'Marketing' },
-    { id: 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b14', name: 'HR' },
-    { id: 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b15', name: 'Finance' },
-    { id: 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b16', name: 'Operations' },
-    { id: 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380b17', name: 'Other' },
-  ]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Attempt to fetch fresh departments from database settings configuration
+  // Sync fullName when user details load
+  useEffect(() => {
+    if (user?.fullName && !fullName) {
+      setFullName(user.fullName);
+    }
+  }, [user]);
+
+  // Fetch active departments list from settings configuration
   useEffect(() => {
     const fetchSettings = async () => {
       if (!accessToken) return;
       try {
-        const res = await fetch(`${API_URL}/settings`, {
+        const res = await fetch(`${API_URL}/settings/departments`, {
           headers: { 'Authorization': `Bearer ${accessToken}` }
         });
         if (res.ok) {
-          // Departments fetch logic placeholder
+          const data = await res.json();
+          setDepartments(data);
         }
       } catch (err) {
-        console.warn('Could not fetch settings list, using default list.', err);
+        console.warn('Could not fetch settings list.', err);
       }
     };
     fetchSettings();
