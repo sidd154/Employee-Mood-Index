@@ -28,6 +28,8 @@ const PORT = process.env.PORT || 5000;
 app.use(
   helmet({
     crossOriginResourcePolicy: { policy: 'cross-origin' },
+    contentSecurityPolicy: false,
+    hsts: false,
   })
 );
 app.use(
