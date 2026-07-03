@@ -77,10 +77,10 @@ async function run() {
       { date: '2026-06-11', score: 7.2 },
     ],
     departments: [
-      { name: 'Engineering', moodIndex: 7.4, participationRate: 88 },
-      { name: 'Sales', moodIndex: 6.8, participationRate: 80 },
-      { name: 'HR', moodIndex: 8.2, participationRate: 90 },
-      { name: 'Marketing', moodIndex: 7.1, participationRate: 78 },
+      { name: 'Engineering', headcount: 12, overallAvg: 7.4, thisMonthAvg: 7.6, lastMonthAvg: 7.2 },
+      { name: 'Sales', headcount: 8, overallAvg: 6.8, thisMonthAvg: 6.5, lastMonthAvg: 7.0 },
+      { name: 'HR', headcount: 4, overallAvg: 8.2, thisMonthAvg: 8.4, lastMonthAvg: 8.0 },
+      { name: 'Marketing', headcount: 6, overallAvg: 7.1, thisMonthAvg: 7.3, lastMonthAvg: 6.9 },
     ],
     feelings: [
       { name: 'Focused', count: 48, moodCorrelation: 7.8 },

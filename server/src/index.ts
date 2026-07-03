@@ -75,12 +75,23 @@ async function initializeDatabase() {
   try {
     console.log('Running database initialization hooks...');
 
+    // Option B: Alter check constraint on mood_score to support 1-10
+    console.log('Updating mood_entries mood_score check constraint to 1-10...');
+    await query('ALTER TABLE mood_entries DROP CONSTRAINT IF EXISTS mood_entries_mood_score_check');
+    await query('ALTER TABLE mood_entries ADD CONSTRAINT mood_entries_mood_score_check CHECK (mood_score BETWEEN 1 AND 10)');
+
+    // Ensure 'Clients' contributor option exists in database
+    const clientsCheck = await query("SELECT 1 FROM contributors WHERE name = 'Clients'");
+    if (clientsCheck.rows.length === 0) {
+      console.log("Seeding 'Clients' contributor...");
+      await query("INSERT INTO contributors (name) VALUES ('Clients')");
+    }
+
     const rolesCheck = await query('SELECT count(*) as count FROM roles');
     if (parseInt(rolesCheck.rows[0].count) === 0) {
       console.log('Seeding default roles...');
       await query(`
         INSERT INTO roles (id, name) VALUES
-          ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'super_admin'),
           ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12', 'admin'),
           ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a13', 'employee')
       `);
@@ -145,23 +156,42 @@ async function initializeDatabase() {
       }
     }
 
-    const superAdminEmail = (process.env.SUPER_ADMIN_EMAIL || 'siddhanthsrinivasan@gmail.com').toLowerCase().trim();
-    const superAdminName = process.env.SUPER_ADMIN_NAME || 'Super Admin';
+    // Merge roles table: merge super_admin into admin
+    const superAdminRoleCheck = await query("SELECT id FROM roles WHERE name = 'super_admin'");
+    if (superAdminRoleCheck.rows.length > 0) {
+      const superAdminRoleId = superAdminRoleCheck.rows[0].id;
+      // Ensure admin role exists
+      let adminRoleId = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12';
+      const adminRoleCheck = await query("SELECT id FROM roles WHERE name = 'admin'");
+      if (adminRoleCheck.rows.length > 0) {
+        adminRoleId = adminRoleCheck.rows[0].id;
+      }
+      
+      console.log('Migrating users from super_admin role to admin role...');
+      // Update all users who currently have super_admin role to admin role
+      await query("UPDATE users SET role_id = $1 WHERE role_id = $2", [adminRoleId, superAdminRoleId]);
+      // Delete super_admin role
+      await query("DELETE FROM roles WHERE id = $1", [superAdminRoleId]);
+      console.log('Role migration completed.');
+    }
 
-    const superAdminRoleRes = await query("SELECT id FROM roles WHERE name = 'super_admin'");
-    const superAdminRoleId = superAdminRoleRes.rows[0].id;
+    const adminEmail = 'siddhanthsrinivasan@gmail.com';
+    const adminName = 'Siddhanth Srinivasan';
 
-    const userCheck = await query('SELECT id FROM users WHERE LOWER(email) = $1', [superAdminEmail]);
+    const adminRoleRes = await query("SELECT id FROM roles WHERE name = 'admin'");
+    const adminRoleId = adminRoleRes.rows[0].id;
+
+    const userCheck = await query('SELECT id FROM users WHERE LOWER(email) = $1', [adminEmail]);
     if (userCheck.rows.length === 0) {
-      console.log(`Creating default Super Admin account for ${superAdminEmail}...`);
+      console.log(`Creating default Admin account for ${adminEmail}...`);
       await query(
         `INSERT INTO users (email, role_id, full_name) 
          VALUES ($1, $2, $3)`,
-        [superAdminEmail, superAdminRoleId, superAdminName]
+        [adminEmail, adminRoleId, adminName]
       );
-      console.log('Super Admin account created successfully.');
+      console.log('Admin account created successfully.');
     } else {
-      await query('UPDATE users SET role_id = $1 WHERE LOWER(email) = $2', [superAdminRoleId, superAdminEmail]);
+      await query('UPDATE users SET role_id = $1 WHERE LOWER(email) = $2', [adminRoleId, adminEmail]);
     }
   } catch (err) {
     console.error('Error during database initialization hooks:', err);

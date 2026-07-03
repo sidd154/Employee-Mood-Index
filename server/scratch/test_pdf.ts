@@ -46,8 +46,8 @@ async function test() {
         { date: '2026-06-02', score: 80 }
       ],
       departments: [
-        { name: 'Engineering', moodIndex: 84, participationRate: 95 },
-        { name: 'Sales', moodIndex: 72, participationRate: 90 }
+        { name: 'Engineering', headcount: 5, overallAvg: 8.4, thisMonthAvg: 8.5, lastMonthAvg: 8.2 },
+        { name: 'Sales', headcount: 3, overallAvg: 7.2, thisMonthAvg: 7.0, lastMonthAvg: 7.4 }
       ],
       feelings: [
         { name: 'Happy', count: 40, moodCorrelation: 82 },

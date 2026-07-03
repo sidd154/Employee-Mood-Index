@@ -1,17 +1,20 @@
-import { Resend } from 'resend';
+import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
 import { query } from '../config/db';
 
 dotenv.config();
 
-const resendApiKey = process.env.RESEND_API_KEY;
-const resend = resendApiKey ? new Resend(resendApiKey) : null;
-
-if (!resend) {
-  console.warn(
-    'Warning: RESEND_API_KEY is not set. All emails will be printed to the server console instead of being sent.'
-  );
-}
+// Create nodemailer transporter
+// Gmail SMTP is smtp.gmail.com (SSL port 465, STARTTLS port 587)
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST || 'smtp.gmail.com',
+  port: parseInt(process.env.SMTP_PORT || '465'),
+  secure: process.env.SMTP_PORT !== '587', // true for 465, false for other ports
+  auth: {
+    user: process.env.SMTP_USER || 'marketing@pixel-studios.com',
+    pass: process.env.SMTP_PASS || 'psdztkgglbtzqdrg',
+  },
+});
 
 export const sendEmail = async (options: {
   to: string;
@@ -20,7 +23,7 @@ export const sendEmail = async (options: {
   attachments?: any[];
   emailType: 'OTP' | 'Reminder_9AM' | 'Reminder_4PM' | 'Report';
 }) => {
-  let fromEmail = process.env.EMAIL_FROM || 'onboarding@resend.dev';
+  let fromEmail = process.env.EMAIL_FROM || 'marketing@pixel-studios.com';
 
   try {
     // Fetch custom from sender email from database settings
@@ -35,45 +38,27 @@ export const sendEmail = async (options: {
         console.error('Failed to parse email_configuration setting:', parseErr);
       }
     }
-    if (resend) {
-      const response = await resend.emails.send({
-        from: `Employee Mood Index <${fromEmail}>`,
-        to: options.to,
-        subject: options.subject,
-        html: options.html,
-        attachments: options.attachments,
-      });
 
-      if (response.error) {
-        throw new Error(JSON.stringify(response.error));
-      }
+    const mailOptions = {
+      from: `Employee Mood Index <${fromEmail}>`,
+      to: options.to,
+      subject: options.subject,
+      html: options.html,
+      attachments: options.attachments ? options.attachments.map(att => ({
+        filename: att.filename,
+        content: att.content, // Buffer or string
+      })) : undefined,
+    };
 
-      await query(
-        `INSERT INTO email_logs (recipient, email_type, status, sent_at)
-         VALUES ($1, $2, $3, NOW())`,
-        [options.to, options.emailType, 'sent']
-      );
+    const info = await transporter.sendMail(mailOptions);
 
-      return { success: true, id: response.data?.id };
-    } else {
-      console.log('=============== MOCK EMAIL SENT ===============');
-      console.log(`To: ${options.to}`);
-      console.log(`Subject: ${options.subject}`);
-      console.log(`Type: ${options.emailType}`);
-      console.log(`Content:\n${options.html.replace(/<[^>]*>/g, '')}`);
-      if (options.attachments && options.attachments.length > 0) {
-        console.log(`Attachments: ${options.attachments.map(a => a.filename).join(', ')}`);
-      }
-      console.log('================================================');
+    await query(
+      `INSERT INTO email_logs (recipient, email_type, status, sent_at)
+       VALUES ($1, $2, $3, NOW())`,
+      [options.to, options.emailType, 'sent']
+    );
 
-      await query(
-        `INSERT INTO email_logs (recipient, email_type, status, sent_at)
-         VALUES ($1, $2, $3, NOW())`,
-        [options.to, options.emailType, 'sent']
-      );
-
-      return { success: true, mock: true };
-    }
+    return { success: true, id: info.messageId };
   } catch (error: any) {
     console.error('Failed to send email:', error);
     try {

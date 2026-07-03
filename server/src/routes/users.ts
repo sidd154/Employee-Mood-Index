@@ -1,11 +1,12 @@
 import { Router } from 'express';
-import { getAllUsers, updateUserRole, deleteUser } from '../controllers/users';
+import { getAllUsers, updateUserRole, deleteUser, registerUser } from '../controllers/users';
 import { authenticateToken, requireRole } from '../middleware/auth';
 
 const router = Router();
 
-router.get('/', authenticateToken, requireRole(['super_admin', 'admin']), getAllUsers);
-router.post('/role', authenticateToken, requireRole(['super_admin']), updateUserRole);
-router.delete('/:id', authenticateToken, requireRole(['super_admin']), deleteUser);
+router.get('/', authenticateToken, requireRole(['admin']), getAllUsers);
+router.post('/role', authenticateToken, requireRole(['admin']), updateUserRole);
+router.delete('/:id', authenticateToken, requireRole(['admin']), deleteUser);
+router.post('/register', authenticateToken, requireRole(['admin']), registerUser);
 
 export default router;

@@ -3,26 +3,8 @@ import { AuthenticatedRequest } from '../middleware/auth';
 import { query } from '../config/db';
 
 function getDateFilterSQL(range: string, paramIndexStart: number = 1): { sql: string; values: any[] } {
-  let sql = '';
+  const sql = `created_at >= DATE_TRUNC('year', NOW())`;
   const values: any[] = [];
-
-  switch (range) {
-    case '7d':
-      sql = `created_at >= NOW() - INTERVAL '7 days'`;
-      break;
-    case '30d':
-      sql = `created_at >= NOW() - INTERVAL '30 days'`;
-      break;
-    case 'ytd':
-      sql = `created_at >= DATE_TRUNC('year', NOW())`;
-      break;
-    case 'custom':
-      sql = `created_at >= $${paramIndexStart} AND created_at <= $${paramIndexStart + 1}`;
-      break;
-    default:
-      sql = `created_at >= NOW() - INTERVAL '30 days'`;
-  }
-
   return { sql, values };
 }
 
@@ -30,7 +12,7 @@ export const getOverviewStats = async (req: AuthenticatedRequest, res: Response)
   try {
     const moodRes = await query(`SELECT AVG(mood_score) as avg_score FROM mood_entries`);
     const avgScore = parseFloat(moodRes.rows[0].avg_score || '0');
-    const moodIndex = parseFloat((avgScore * 2).toFixed(1));
+    const moodIndex = parseFloat(avgScore.toFixed(1));
 
     const employeeRes = await query(
       `SELECT COUNT(*) as total FROM users u
@@ -39,14 +21,14 @@ export const getOverviewStats = async (req: AuthenticatedRequest, res: Response)
     );
     const totalEmployees = parseInt(employeeRes.rows[0].total || '0');
 
-    const todayCheckinsRes = await query(
+    const thisWeekCheckinsRes = await query(
       `SELECT COUNT(*) as total FROM mood_entries 
-       WHERE created_at >= CURRENT_DATE`
+       WHERE created_at >= DATE_TRUNC('week', NOW())`
     );
-    const checkinsToday = parseInt(todayCheckinsRes.rows[0].total || '0');
-    const participationRate = totalEmployees > 0 ? Math.round((checkinsToday / totalEmployees) * 100) : 0;
+    const checkinsThisWeek = parseInt(thisWeekCheckinsRes.rows[0].total || '0');
+    const participationRate = totalEmployees > 0 ? Math.min(100, Math.round((checkinsThisWeek / totalEmployees) * 100)) : 0;
 
-    res.json({ moodIndex, totalEmployees, participationRate, checkinsToday });
+    res.json({ moodIndex, totalEmployees, participationRate, checkinsToday: checkinsThisWeek, checkinsThisWeek });
   } catch (error: any) {
     console.error('Get overview stats error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -70,12 +52,12 @@ export const getMoodTrends = async (req: AuthenticatedRequest, res: Response) =>
 
     const trendsRes = await query(
       `SELECT 
-         created_at::date as date, 
-         ROUND(AVG(mood_score) * 2, 1) as score,
+         DATE_TRUNC('week', created_at)::date as date, 
+         ROUND(AVG(mood_score), 1) as score,
          COUNT(*) as count
        FROM mood_entries
        ${dateFilter}
-       GROUP BY created_at::date
+       GROUP BY DATE_TRUNC('week', created_at)::date
        ORDER BY date ASC`,
       values
     );
@@ -140,19 +122,19 @@ export const getDepartmentAnalytics = async (req: AuthenticatedRequest, res: Res
          d.id, 
          d.name,
          COUNT(DISTINCT u.id) as employee_count,
-         ROUND(AVG(m.mood_score) * 2, 1) as mood_index,
-         COUNT(DISTINCT CASE WHEN m.created_at >= CURRENT_DATE THEN u.id END) as checked_in_today
+         ROUND(AVG(m.mood_score), 1) as mood_index,
+         COUNT(DISTINCT CASE WHEN m.created_at >= DATE_TRUNC('week', NOW()) THEN u.id END) as checked_in_this_week
        FROM departments d
        LEFT JOIN users u ON u.department_id = d.id AND u.role_id = (SELECT id FROM roles WHERE name = 'employee')
-       LEFT JOIN mood_entries m ON m.user_id = u.id AND m.created_at >= NOW() - INTERVAL '30 days'
+       LEFT JOIN mood_entries m ON m.user_id = u.id AND m.created_at >= DATE_TRUNC('year', NOW())
        GROUP BY d.id, d.name
        ORDER BY d.name ASC`
     );
 
     const depts = deptRes.rows.map((row) => {
       const employeeCount = parseInt(row.employee_count || '0');
-      const checkedInToday = parseInt(row.checked_in_today || '0');
-      const participationRate = employeeCount > 0 ? Math.round((checkedInToday / employeeCount) * 100) : 0;
+      const checkedInThisWeek = parseInt(row.checked_in_this_week || '0');
+      const participationRate = employeeCount > 0 ? Math.round((checkedInThisWeek / employeeCount) * 100) : 0;
 
       return {
         id: row.id,
@@ -181,30 +163,18 @@ export const getDepartmentDetails = async (req: AuthenticatedRequest, res: Respo
     }
 
     const deptName = deptInfo.rows[0].name;
-    let dateFilter = '';
-    if (range === '7d') {
-      dateFilter = `AND m.created_at >= NOW() - INTERVAL '7 days'`;
-    } else if (range === 'ytd') {
-      dateFilter = `AND m.created_at >= DATE_TRUNC('year', NOW())`;
-    } else {
-      dateFilter = `AND m.created_at >= NOW() - INTERVAL '30 days'`;
-    }
+    const dateFilter = `AND m.created_at >= DATE_TRUNC('year', NOW())`;
     const values: any[] = [id];
-
-    if (range === 'custom' && startDate && endDate) {
-      dateFilter = 'AND m.created_at >= $2 AND m.created_at <= $3';
-      values.push(new Date(startDate as string), new Date(endDate as string));
-    }
 
     const trends = await query(
       `SELECT 
-         m.created_at::date as date, 
-         ROUND(AVG(m.mood_score) * 2, 1) as score,
+         DATE_TRUNC('week', m.created_at)::date as date, 
+         ROUND(AVG(m.mood_score), 1) as score,
          COUNT(*) as count
        FROM mood_entries m
        JOIN users u ON m.user_id = u.id
        WHERE u.department_id = $1 ${dateFilter}
-       GROUP BY m.created_at::date
+       GROUP BY DATE_TRUNC('week', m.created_at)::date
        ORDER BY date ASC`,
       values
     );
@@ -259,8 +229,8 @@ export const getDepartmentDetails = async (req: AuthenticatedRequest, res: Respo
          u.id, 
          u.full_name as name, 
          u.email,
-         ROUND(AVG(m.mood_score) * 2, 1) as mood_index,
-         COUNT(DISTINCT m.created_at::date) as check_in_count,
+         ROUND(AVG(m.mood_score), 1) as mood_index,
+         COUNT(DISTINCT DATE_TRUNC('week', m.created_at)::date) as check_in_count,
          MAX(m.created_at) as last_check_in
        FROM users u
        LEFT JOIN mood_entries m ON m.user_id = u.id
@@ -310,13 +280,14 @@ export const getEmployeeExplorer = async (req: AuthenticatedRequest, res: Respon
          u.id,
          u.full_name as name,
          d.name as department,
-         ROUND(AVG(m.mood_score) * 2, 1) as mood_index,
+         ROUND(AVG(m.mood_score), 1) as mood_index,
          MAX(m.created_at) as last_check_in,
-         COUNT(DISTINCT m.created_at::date) as check_ins_count
+         COUNT(DISTINCT DATE_TRUNC('week', m.created_at)::date) as check_ins_count,
+         u.created_at
        FROM users u
        JOIN roles r ON u.role_id = r.id
        LEFT JOIN departments d ON u.department_id = d.id
-       LEFT JOIN mood_entries m ON m.user_id = u.id
+       LEFT JOIN mood_entries m ON m.user_id = u.id AND m.created_at >= DATE_TRUNC('year', NOW())
        ${whereClause}
        GROUP BY u.id, u.full_name, d.name, u.created_at
        ORDER BY u.full_name ASC`,
@@ -325,7 +296,10 @@ export const getEmployeeExplorer = async (req: AuthenticatedRequest, res: Respon
 
     const processedEmployees = employeesRes.rows.map((row) => {
       const count = parseInt(row.check_ins_count || '0');
-      const participationRate = count > 0 ? Math.min(Math.round((count / 30) * 100), 100) : 0;
+      const startOfYear = new Date(new Date().getFullYear(), 0, 1);
+      const dateLimit = new Date(row.created_at) > startOfYear ? new Date(row.created_at) : startOfYear;
+      const weeksSinceLimit = Math.max(1, Math.ceil((Date.now() - dateLimit.getTime()) / (1000 * 60 * 60 * 24 * 7)));
+      const participationRate = Math.min(Math.round((count / weeksSinceLimit) * 100), 100);
 
       return {
         id: row.id,
@@ -349,10 +323,12 @@ export const getEmployeeDetails = async (req: AuthenticatedRequest, res: Respons
 
   try {
     const profileRes = await query(
-      `SELECT u.id, u.full_name as name, u.email, d.name as department, u.created_at
+      `SELECT u.id, u.full_name as name, u.email, d.name as department, u.created_at, MAX(m.created_at) as last_check_in
        FROM users u
        LEFT JOIN departments d ON u.department_id = d.id
-       WHERE u.id = $1`,
+       LEFT JOIN mood_entries m ON m.user_id = u.id
+       WHERE u.id = $1
+       GROUP BY u.id, u.full_name, u.email, d.name, u.created_at`,
       [id]
     );
 
@@ -363,9 +339,10 @@ export const getEmployeeDetails = async (req: AuthenticatedRequest, res: Respons
     const profile = profileRes.rows[0];
 
     const trendsRes = await query(
-      `SELECT created_at::date as date, ROUND(mood_score * 2, 1) as score
+      `SELECT DATE_TRUNC('week', created_at)::date as date, ROUND(AVG(mood_score), 1) as score
        FROM mood_entries
-       WHERE user_id = $1 AND created_at >= NOW() - INTERVAL '30 days'
+       WHERE user_id = $1 AND created_at >= DATE_TRUNC('year', NOW())
+       GROUP BY DATE_TRUNC('week', created_at)::date
        ORDER BY date ASC`,
       [id]
     );
@@ -373,7 +350,7 @@ export const getEmployeeDetails = async (req: AuthenticatedRequest, res: Respons
     const distRes = await query(
       `SELECT mood_score, COUNT(*) as count
        FROM mood_entries
-       WHERE user_id = $1
+       WHERE user_id = $1 AND created_at >= DATE_TRUNC('year', NOW())
        GROUP BY mood_score`,
       [id]
     );
@@ -392,7 +369,7 @@ export const getEmployeeDetails = async (req: AuthenticatedRequest, res: Respons
        FROM entry_feelings ef
        JOIN feelings f ON ef.feeling_id = f.id
        JOIN mood_entries m ON ef.entry_id = m.id
-       WHERE m.user_id = $1
+       WHERE m.user_id = $1 AND m.created_at >= DATE_TRUNC('year', NOW())
        GROUP BY f.name
        ORDER BY count DESC LIMIT 5`,
       [id]
@@ -403,7 +380,7 @@ export const getEmployeeDetails = async (req: AuthenticatedRequest, res: Respons
        FROM entry_contributors ec
        JOIN contributors c ON ec.contributor_id = c.id
        JOIN mood_entries m ON ec.entry_id = m.id
-       WHERE m.user_id = $1
+       WHERE m.user_id = $1 AND m.created_at >= DATE_TRUNC('year', NOW())
        GROUP BY c.name
        ORDER BY count DESC LIMIT 5`,
       [id]
@@ -437,7 +414,7 @@ export const getFeelingsAnalytics = async (req: AuthenticatedRequest, res: Respo
       `SELECT 
          f.name,
          COUNT(ef.feeling_id) as count,
-         ROUND(AVG(m.mood_score) * 2, 1) as avg_mood_correlation
+         ROUND(AVG(m.mood_score), 1) as avg_mood_correlation
        FROM feelings f
        LEFT JOIN entry_feelings ef ON ef.feeling_id = f.id
        LEFT JOIN mood_entries m ON ef.entry_id = m.id
@@ -487,7 +464,7 @@ export const getContributorAnalytics = async (req: AuthenticatedRequest, res: Re
       `SELECT 
          c.name,
          COUNT(ec.contributor_id) as count,
-         ROUND(AVG(m.mood_score) * 2, 1) as avg_mood_correlation
+         ROUND(AVG(m.mood_score), 1) as avg_mood_correlation
        FROM contributors c
        LEFT JOIN entry_contributors ec ON ec.contributor_id = c.id
        LEFT JOIN mood_entries m ON ec.entry_id = m.id

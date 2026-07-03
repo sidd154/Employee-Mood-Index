@@ -15,11 +15,11 @@
   "crons": [
     {
       "path": "/cron/morning",
-      "schedule": "30 3 * * 1-5"
+      "schedule": "30 3 * * 5"
     },
     {
       "path": "/cron/afternoon",
-      "schedule": "30 10 * * 1-5"
+      "schedule": "30 10 * * 5"
     },
     {
       "path": "/cron/monthly-report",

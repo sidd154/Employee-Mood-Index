@@ -32,8 +32,28 @@ function drawTrendLineChart(
   // 2. Draw chart border box
   doc.lineWidth(1).strokeColor(gridColor).rect(startX, startY, width, height).stroke();
 
-  if (trends.length < 2) {
-    doc.fillColor(secondaryColor).fontSize(9).text('Not enough historical data points to display line chart', startX + 10, startY + height / 2 - 5, { align: 'center', width });
+  if (trends.length === 0) {
+    doc.fillColor(secondaryColor).fontSize(9).text('No historical data points to display line chart', startX + 10, startY + height / 2 - 5, { align: 'center', width });
+    doc.restore();
+    return;
+  }
+
+  if (trends.length === 1) {
+    const t = trends[0];
+    const y = startY + height - (t.score / 10) * height;
+    
+    // Draw horizontal trend line at the score level
+    doc.lineWidth(1.5).strokeColor(accentColor);
+    doc.moveTo(startX, y).lineTo(startX + width, y).stroke();
+    
+    // Draw point circle in the middle of the chart
+    const centerX = startX + width / 2;
+    doc.fillColor(accentColor).circle(centerX, y, 2.5).fill();
+    
+    // Draw X-axis date label at the center
+    const dateStr = 'Wk of ' + new Date(t.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    doc.fillColor(secondaryColor).fontSize(6).text(dateStr, centerX - 25, startY + height + 5, { align: 'center', width: 50 });
+    
     doc.restore();
     return;
   }
@@ -60,7 +80,7 @@ function drawTrendLineChart(
 
     const shouldLabel = idx === 0 || idx === Math.floor(points.length / 2) || idx === points.length - 1;
     if (shouldLabel) {
-      const dateStr = new Date(pt.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      const dateStr = 'Wk of ' + new Date(pt.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
       doc.fillColor(secondaryColor).fontSize(6).text(dateStr, pt.x - 25, startY + height + 5, { align: 'center', width: 50 });
     }
   });
@@ -172,29 +192,30 @@ export const generateEmployeeReportPDF = (
 
     doc.y = cardY + 115;
 
-    // Mood Distribution Section
-    doc.fillColor(primaryColor).font('Helvetica-Bold').fontSize(12).text('Mood Category Distribution', 50);
-    doc.font('Helvetica').fontSize(8).fillColor(secondaryColor).text('How you rated your days during this period', 50);
-    doc.moveDown(0.6);
+    // Most Logged Score Section
+    doc.fillColor(primaryColor).font('Helvetica-Bold').fontSize(12).text('Most Logged Wellbeing Score', 50);
+    doc.font('Helvetica').fontSize(8).fillColor(secondaryColor).text('The individual score number logged most frequently', 50);
+    doc.moveDown(0.5);
 
     const distStartY = doc.y;
-    const colWidth = 90;
-    const moodMappingColors: { [key: string]: string } = {
-      Great: '#10b981', Good: '#22c55e', Okay: '#eab308', Bad: '#f97316', Awful: '#ef4444'
-    };
+    let maxScoreEntry = data.distribution && data.distribution.length > 0 ? data.distribution[0] : null;
+    if (data.distribution) {
+      data.distribution.forEach(item => {
+        if (maxScoreEntry && item.count > maxScoreEntry.count) {
+          maxScoreEntry = item;
+        }
+      });
+    }
 
-    data.distribution.forEach((item, idx) => {
-      const colX = 50 + idx * colWidth;
-      const mColor = moodMappingColors[item.name] || accentColor;
-      
-      // Draw color dot
-      doc.fillColor(mColor).circle(colX + 5, distStartY + 6, 4).fill();
-      // Text
-      doc.fillColor(primaryColor).font('Helvetica-Bold').fontSize(9.5).text(item.name, colX + 15, distStartY);
-      doc.fillColor(secondaryColor).font('Helvetica').fontSize(8).text(`${item.count} check-ins`, colX + 15, distStartY + 12);
-    });
-
-    doc.y = distStartY + 40;
+    if (!maxScoreEntry || maxScoreEntry.count === 0) {
+      doc.fillColor(secondaryColor).font('Helvetica').fontSize(9.5).text('No check-ins logged in this period.', 50, distStartY);
+      doc.y = distStartY + 20;
+    } else {
+      doc.fillColor(accentColor).font('Helvetica-Bold').fontSize(18).text(`${maxScoreEntry.name} / 10`, 50, distStartY);
+      doc.fillColor(primaryColor).font('Helvetica-Bold').fontSize(9.5).text(`Logged ${maxScoreEntry.count} times`, 110, distStartY + 2);
+      doc.fillColor(secondaryColor).font('Helvetica').fontSize(8).text('This number represents your most frequent weekly check-in rating.', 110, distStartY + 13);
+      doc.y = distStartY + 30;
+    }
 
     // Top Feelings & Contributors
     doc.strokeColor(gridColor).lineWidth(1).moveTo(50, doc.y).lineTo(545, doc.y).stroke();
@@ -240,7 +261,7 @@ export const generateEmployeeReportPDF = (
     doc.addPage();
 
     doc.fillColor(accentColor).rect(50, 45, 8, 25).fill();
-    doc.fillColor(primaryColor).font('Helvetica-Bold').fontSize(16).text('Daily Wellbeing Timeline', 68, 47);
+    doc.fillColor(primaryColor).font('Helvetica-Bold').fontSize(16).text('Weekly Wellbeing Timeline', 68, 47);
     doc.moveDown(1.5);
 
     if (data.trends.length === 0) {
@@ -255,34 +276,6 @@ export const generateEmployeeReportPDF = (
       drawTrendLineChart(doc, chartX, chartY, chartWidth, chartHeight, data.trends, accentColor, gridColor, secondaryColor);
       
       doc.y = chartY + chartHeight + 35;
-
-      doc.strokeColor(gridColor).lineWidth(1).moveTo(50, doc.y).lineTo(545, doc.y).stroke();
-      doc.moveDown(1.5);
-
-      // History Table
-      doc.fillColor(primaryColor).font('Helvetica-Bold').fontSize(11).text('Recent Timeline Entries', 50);
-      doc.moveDown(0.4);
-
-      // Table Headers
-      const tableHeadY = doc.y;
-      doc.fillColor(secondaryColor).font('Helvetica-Bold').fontSize(8);
-      doc.text('Date', 50, tableHeadY);
-      doc.text('Wellbeing Score (out of 10)', 250, tableHeadY);
-
-      doc.strokeColor(gridColor).lineWidth(0.5).moveTo(50, tableHeadY + 12).lineTo(545, tableHeadY + 12).stroke();
-      
-      let tRowY = tableHeadY + 18;
-      // Show latest 8 entries to avoid page overflow
-      data.trends.slice(-8).reverse().forEach((t) => {
-        if (tRowY > 730) return; // Prevent overflow
-
-        const dateStr = new Date(t.date).toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
-        doc.fillColor(primaryColor).font('Helvetica').fontSize(8.5);
-        doc.text(dateStr, 50, tRowY);
-        doc.font('Helvetica-Bold').text(`${t.score.toFixed(1)} / 10`, 250, tRowY);
-
-        tRowY += 16;
-      });
     }
 
     // Footer Page 2
@@ -426,20 +419,30 @@ export const generateAdminReportPDF = (
 
     doc.y = rowY + 15;
 
-    // Distribution
-    doc.fillColor(primaryColor).font('Helvetica-Bold').fontSize(11).text('Overall Mood Distribution', 50);
-    doc.moveDown(0.4);
+    // Most Logged Score Section
+    doc.fillColor(primaryColor).font('Helvetica-Bold').fontSize(11).text('Most Logged Wellbeing Score', 50);
+    doc.font('Helvetica').fontSize(8).fillColor(secondaryColor).text('The individual score number logged most frequently across the company', 50);
+    doc.moveDown(0.5);
+
     const distY = doc.y;
-    const moodMappingColors: { [key: string]: string } = {
-      Great: '#10b981', Good: '#22c55e', Okay: '#eab308', Bad: '#f97316', Awful: '#ef4444'
-    };
-    data.distribution.forEach((item, idx) => {
-      const colX = 50 + idx * 95;
-      const mColor = moodMappingColors[item.name] || accentColor;
-      doc.fillColor(mColor).circle(colX + 5, distY + 5, 3.5).fill();
-      doc.fillColor(primaryColor).font('Helvetica-Bold').fontSize(8.5).text(`${item.name}`, colX + 13, distY);
-      doc.fillColor(secondaryColor).font('Helvetica').fontSize(7.5).text(`${item.count} entries`, colX + 13, distY + 11);
-    });
+    let maxScoreEntry = data.distribution && data.distribution.length > 0 ? data.distribution[0] : null;
+    if (data.distribution) {
+      data.distribution.forEach(item => {
+        if (maxScoreEntry && item.count > maxScoreEntry.count) {
+          maxScoreEntry = item;
+        }
+      });
+    }
+
+    if (!maxScoreEntry || maxScoreEntry.count === 0) {
+      doc.fillColor(secondaryColor).font('Helvetica').fontSize(9.5).text('No check-ins logged in this period.', 50, distY);
+      doc.y = distY + 20;
+    } else {
+      doc.fillColor(accentColor).font('Helvetica-Bold').fontSize(18).text(`${maxScoreEntry.name} / 10`, 50, distY);
+      doc.fillColor(primaryColor).font('Helvetica-Bold').fontSize(9.5).text(`Logged ${maxScoreEntry.count} times`, 110, distY + 2);
+      doc.fillColor(secondaryColor).font('Helvetica').fontSize(8).text('This number represents the most common rating among employees.', 110, distY + 13);
+      doc.y = distY + 30;
+    }
 
     // Footer Page 1
     doc.fillColor('#94a3b8').fontSize(7.5).text('Generated by Employee Mood Index • Page 1 of 2', 50, 760, { align: 'center' });
@@ -475,7 +478,7 @@ export const generateAdminReportPDF = (
     const dSectY = doc.y;
 
     // Left Column: Drivers (Mood Correlation >= 6.0)
-    doc.fillColor('#10b981').font('Helvetica-Bold').fontSize(9.5).text('🟢 Positive Drivers (Boosters)', 50, dSectY);
+    doc.fillColor('#10b981').font('Helvetica-Bold').fontSize(9.5).text('Positive Drivers (Boosters)', 50, dSectY);
     doc.strokeColor('#e6f4ea').lineWidth(0.5).moveTo(50, dSectY + 12).lineTo(280, dSectY + 12).stroke();
     
     let drvY = dSectY + 18;
@@ -499,7 +502,7 @@ export const generateAdminReportPDF = (
     }
 
     // Right Column: Detractors (Mood Correlation < 6.0)
-    doc.fillColor('#f97316').font('Helvetica-Bold').fontSize(9.5).text('🟠 Detractors (Stressors)', 305, dSectY);
+    doc.fillColor('#f97316').font('Helvetica-Bold').fontSize(9.5).text('Detractors (Stressors)', 305, dSectY);
     doc.strokeColor('#fdf2e9').lineWidth(0.5).moveTo(305, dSectY + 12).lineTo(545, dSectY + 12).stroke();
 
     let detY = dSectY + 18;

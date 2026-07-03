@@ -44,8 +44,8 @@ export const updateUserRole = async (req: AuthenticatedRequest, res: Response) =
       return res.status(404).json({ error: 'User not found' });
     }
 
-    if (targetUser.rows[0].role === 'super_admin') {
-      return res.status(403).json({ error: 'Super Admin roles cannot be modified' });
+    if (targetUser.rows[0].email.toLowerCase().trim() === 'siddhanthsrinivasan@gmail.com') {
+      return res.status(403).json({ error: 'The hardcoded primary admin account cannot be modified.' });
     }
 
     const roleRes = await query('SELECT id FROM roles WHERE name = $1', [roleName]);
@@ -82,8 +82,8 @@ export const deleteUser = async (req: AuthenticatedRequest, res: Response) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    if (targetUser.rows[0].role === 'super_admin') {
-      return res.status(403).json({ error: 'Super Admin accounts cannot be deleted' });
+    if (targetUser.rows[0].email.toLowerCase().trim() === 'siddhanthsrinivasan@gmail.com') {
+      return res.status(403).json({ error: 'The hardcoded primary admin account cannot be deleted.' });
     }
 
     await query('DELETE FROM users WHERE id = $1', [id]);
@@ -99,3 +99,62 @@ export const deleteUser = async (req: AuthenticatedRequest, res: Response) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 };
+
+export const registerUser = async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+  const { email, fullName, roleName, departmentId } = req.body;
+
+  if (!email || !email.includes('@')) {
+    return res.status(400).json({ error: 'Valid email is required' });
+  }
+
+  try {
+    const emailLower = email.toLowerCase().trim();
+
+    // Check if user already exists
+    const existing = await query('SELECT id FROM users WHERE LOWER(email) = $1', [emailLower]);
+    if (existing.rows.length > 0) {
+      return res.status(400).json({ error: 'User with this email already exists' });
+    }
+
+    // Get role ID
+    const targetRole = roleName || 'employee';
+    const roleRes = await query('SELECT id FROM roles WHERE name = $1', [targetRole]);
+    if (roleRes.rows.length === 0) {
+      return res.status(400).json({ error: 'Invalid role name' });
+    }
+    const roleId = roleRes.rows[0].id;
+
+    // Validate department if provided
+    let deptId = null;
+    if (departmentId) {
+      const deptRes = await query('SELECT id FROM departments WHERE id = $1', [departmentId]);
+      if (deptRes.rows.length === 0) {
+        return res.status(400).json({ error: 'Invalid department ID' });
+      }
+      deptId = deptRes.rows[0].id;
+    }
+
+    // Insert user
+    const insertRes = await query(
+      `INSERT INTO users (email, role_id, full_name, department_id)
+       VALUES ($1, $2, $3, $4) RETURNING id`,
+      [emailLower, roleId, fullName ? fullName.trim() : null, deptId]
+    );
+
+    await logAudit(req.user.id, 'user_registered', {
+      registeredUserId: insertRes.rows[0].id,
+      registeredUserEmail: emailLower,
+      role: targetRole,
+    });
+
+    res.status(201).json({
+      message: 'User registered successfully',
+      userId: insertRes.rows[0].id,
+    });
+  } catch (error: any) {
+    console.error('Register user error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+

@@ -6,41 +6,12 @@ import { sendEmail } from '../services/email';
 import { logAudit } from '../utils/audit';
 
 function getRangeLabel(range: string, start?: string, end?: string): string {
-  if (range === '7d') return 'Last Week';
-  if (range === '30d') return 'Last 30 Days';
-  if (range === 'ytd') return 'From January';
-  if (range === 'custom' && start && end) {
-    return `${new Date(start).toLocaleDateString()} to ${new Date(end).toLocaleDateString()}`;
-  }
-  return 'Last 30 Days';
+  return 'From January';
 }
 
 function getDateFilter(range: string, start?: string, end?: string, tableAlias: string = 'm') {
-  let clause = '';
+  const clause = `AND ${tableAlias}.created_at >= DATE_TRUNC('year', NOW())`;
   const values: any[] = [];
-
-  switch (range) {
-    case '7d':
-      clause = `AND ${tableAlias}.created_at >= NOW() - INTERVAL '7 days'`;
-      break;
-    case '30d':
-      clause = `AND ${tableAlias}.created_at >= NOW() - INTERVAL '30 days'`;
-      break;
-    case 'ytd':
-      clause = `AND ${tableAlias}.created_at >= DATE_TRUNC('year', NOW())`;
-      break;
-    case 'custom':
-      if (start && end) {
-        clause = `AND ${tableAlias}.created_at >= $2 AND ${tableAlias}.created_at <= $3`;
-        values.push(new Date(start), new Date(end));
-      } else {
-        clause = `AND ${tableAlias}.created_at >= NOW() - INTERVAL '30 days'`;
-      }
-      break;
-    default:
-      clause = `AND ${tableAlias}.created_at >= NOW() - INTERVAL '30 days'`;
-  }
-
   return { clause, values };
 }
 
@@ -60,14 +31,14 @@ export const requestEmployeeReport = async (req: AuthenticatedRequest, res: Resp
       [userId]
     );
     const avgScore = parseFloat(moodRes.rows[0].avg_score || '0');
-    const moodIndex = parseFloat((avgScore * 2).toFixed(1));
+    const moodIndex = parseFloat(avgScore.toFixed(1));
 
     // Fetch this month, last month, and overall averages for the employee
     const empStatsRes = await query(
       `SELECT 
-         ROUND(AVG(CASE WHEN created_at >= DATE_TRUNC('month', NOW()) THEN mood_score END) * 2, 1) as this_month_avg,
-         ROUND(AVG(CASE WHEN created_at >= DATE_TRUNC('month', NOW() - INTERVAL '1 month') AND created_at < DATE_TRUNC('month', NOW()) THEN mood_score END) * 2, 1) as last_month_avg,
-         ROUND(AVG(mood_score) * 2, 1) as overall_avg
+         ROUND(AVG(CASE WHEN created_at >= DATE_TRUNC('month', NOW()) THEN mood_score END), 1) as this_month_avg,
+         ROUND(AVG(CASE WHEN created_at >= DATE_TRUNC('month', NOW() - INTERVAL '1 month') AND created_at < DATE_TRUNC('month', NOW()) THEN mood_score END), 1) as last_month_avg,
+         ROUND(AVG(mood_score), 1) as overall_avg
        FROM mood_entries
        WHERE user_id = $1`,
       [userId]
@@ -83,21 +54,20 @@ export const requestEmployeeReport = async (req: AuthenticatedRequest, res: Resp
        GROUP BY mood_score`,
       [userId]
     );
-    const moodMapping: { [key: number]: string } = { 5: 'Great', 4: 'Good', 3: 'Okay', 2: 'Bad', 1: 'Awful' };
-    const distribution = [5, 4, 3, 2, 1].map((score) => {
-      const row = distRes.rows.find((r) => r.mood_score === score);
+    const distribution = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1].map((score) => {
+      const row = distRes.rows.find((r) => parseInt(r.mood_score) === score);
       return {
         score,
-        name: moodMapping[score],
+        name: String(score),
         count: parseInt(row?.count || '0'),
       };
     });
 
     const trendsRes = await query(
-      `SELECT created_at::date as date, ROUND(AVG(mood_score) * 2, 1) as score
+      `SELECT DATE_TRUNC('week', m.created_at)::date as date, ROUND(AVG(mood_score), 1) as score
        FROM mood_entries m 
        WHERE m.user_id = $1 ${filter.clause}
-       GROUP BY created_at::date
+       GROUP BY DATE_TRUNC('week', m.created_at)::date
        ORDER BY date ASC`,
       [userId]
     );
@@ -144,10 +114,10 @@ export const requestEmployeeReport = async (req: AuthenticatedRequest, res: Resp
     if (departmentId) {
       const deptMoodRes = await query(
         `SELECT 
-           ROUND(AVG(m.mood_score) * 2, 1) as range_avg,
-           ROUND(AVG(CASE WHEN m.created_at >= DATE_TRUNC('month', NOW()) THEN m.mood_score END) * 2, 1) as this_month_avg,
-           ROUND(AVG(CASE WHEN m.created_at >= DATE_TRUNC('month', NOW() - INTERVAL '1 month') AND m.created_at < DATE_TRUNC('month', NOW()) THEN m.mood_score END) * 2, 1) as last_month_avg,
-           ROUND(AVG(m.mood_score) * 2, 1) as overall_avg,
+           ROUND(AVG(m.mood_score), 1) as range_avg,
+           ROUND(AVG(CASE WHEN m.created_at >= DATE_TRUNC('month', NOW()) THEN m.mood_score END), 1) as this_month_avg,
+           ROUND(AVG(CASE WHEN m.created_at >= DATE_TRUNC('month', NOW() - INTERVAL '1 month') AND m.created_at < DATE_TRUNC('month', NOW()) THEN m.mood_score END), 1) as last_month_avg,
+           ROUND(AVG(m.mood_score), 1) as overall_avg,
            COUNT(DISTINCT u.id) as headcount
          FROM users u
          LEFT JOIN mood_entries m ON m.user_id = u.id
@@ -183,7 +153,7 @@ export const requestEmployeeReport = async (req: AuthenticatedRequest, res: Resp
 
     await sendEmail({
       to: req.user.email,
-      subject: `Your Daily Mood Index Report - ${rangeLabel}`,
+      subject: `Your Wellbeing Report - ${rangeLabel}`,
       html: `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <h2 style="color: #0f172a;">Your Wellbeing Report</h2>
@@ -235,14 +205,14 @@ export const buildAndEmailAdminReport = async (userId: string, userEmail: string
     filterValues
   );
   const avgScore = parseFloat(moodRes.rows[0].avg_score || '0');
-  const moodIndex = parseFloat((avgScore * 2).toFixed(1));
+  const moodIndex = parseFloat(avgScore.toFixed(1));
 
   // Fetch company stats for this month, last month, overall
   const compStatsRes = await query(
     `SELECT 
-       ROUND(AVG(CASE WHEN created_at >= DATE_TRUNC('month', NOW()) THEN mood_score END) * 2, 1) as this_month_avg,
-       ROUND(AVG(CASE WHEN created_at >= DATE_TRUNC('month', NOW() - INTERVAL '1 month') AND created_at < DATE_TRUNC('month', NOW()) THEN mood_score END) * 2, 1) as last_month_avg,
-       ROUND(AVG(mood_score) * 2, 1) as overall_avg
+       ROUND(AVG(CASE WHEN created_at >= DATE_TRUNC('month', NOW()) THEN mood_score END), 1) as this_month_avg,
+       ROUND(AVG(CASE WHEN created_at >= DATE_TRUNC('month', NOW() - INTERVAL '1 month') AND created_at < DATE_TRUNC('month', NOW()) THEN mood_score END), 1) as last_month_avg,
+       ROUND(AVG(mood_score), 1) as overall_avg
      FROM mood_entries`
   );
   const compStats = compStatsRes.rows[0];
@@ -262,7 +232,23 @@ export const buildAndEmailAdminReport = async (userId: string, userEmail: string
      WHERE r.name = 'employee' AND u.full_name IS NOT NULL`
   );
   const totalEmployees = parseInt(empCountRes.rows[0].count || '0');
-  const participationRate = totalEmployees > 0 ? Math.round((checkinsCount / (totalEmployees * (range === '7d' ? 5 : 20))) * 100) : 0;
+  
+  let expectedCheckinsPerEmployee = 4; // default for 30d
+  if (range === '7d') {
+    expectedCheckinsPerEmployee = 1;
+  } else if (range === 'ytd') {
+    const startOfYear = new Date(new Date().getFullYear(), 0, 1);
+    const now = new Date();
+    const diffTime = Math.abs(now.getTime() - startOfYear.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    expectedCheckinsPerEmployee = Math.max(1, Math.round(diffDays / 7));
+  } else if (range === 'custom' && startDate && endDate) {
+    const diffTime = Math.abs(new Date(endDate).getTime() - new Date(startDate).getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    expectedCheckinsPerEmployee = Math.max(1, Math.round(diffDays / 7));
+  }
+
+  const participationRate = totalEmployees > 0 ? Math.min(100, Math.round((checkinsCount / (totalEmployees * expectedCheckinsPerEmployee)) * 100)) : 0;
 
   const distRes = await query(
     `SELECT mood_score, COUNT(*) as count FROM mood_entries m 
@@ -270,21 +256,20 @@ export const buildAndEmailAdminReport = async (userId: string, userEmail: string
      GROUP BY mood_score`,
     filterValues
   );
-  const moodMapping: { [key: number]: string } = { 5: 'Great', 4: 'Good', 3: 'Okay', 2: 'Bad', 1: 'Awful' };
-  const distribution = [5, 4, 3, 2, 1].map((score) => {
-    const row = distRes.rows.find((r) => r.mood_score === score);
+  const distribution = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1].map((score) => {
+    const row = distRes.rows.find((r) => parseInt(r.mood_score) === score);
     return {
       score,
-      name: moodMapping[score],
+      name: String(score),
       count: parseInt(row?.count || '0'),
     };
   });
 
   const trendsRes = await query(
-    `SELECT created_at::date as date, ROUND(AVG(mood_score) * 2, 1) as score
+    `SELECT DATE_TRUNC('week', m.created_at)::date as date, ROUND(AVG(mood_score), 1) as score
      FROM mood_entries m
      WHERE 1=1 ${filterClause}
-     GROUP BY created_at::date
+     GROUP BY DATE_TRUNC('week', m.created_at)::date
      ORDER BY date ASC`,
     filterValues
   );
@@ -294,9 +279,9 @@ export const buildAndEmailAdminReport = async (userId: string, userEmail: string
     `SELECT 
        d.name,
        COUNT(DISTINCT u.id) as headcount,
-       ROUND(AVG(m.mood_score) * 2, 1) as overall_avg,
-       ROUND(AVG(CASE WHEN m.created_at >= DATE_TRUNC('month', NOW()) THEN m.mood_score END) * 2, 1) as this_month_avg,
-       ROUND(AVG(CASE WHEN m.created_at >= DATE_TRUNC('month', NOW() - INTERVAL '1 month') AND m.created_at < DATE_TRUNC('month', NOW()) THEN m.mood_score END) * 2, 1) as last_month_avg
+       ROUND(AVG(m.mood_score), 1) as overall_avg,
+       ROUND(AVG(CASE WHEN m.created_at >= DATE_TRUNC('month', NOW()) THEN m.mood_score END), 1) as this_month_avg,
+       ROUND(AVG(CASE WHEN m.created_at >= DATE_TRUNC('month', NOW() - INTERVAL '1 month') AND m.created_at < DATE_TRUNC('month', NOW()) THEN m.mood_score END), 1) as last_month_avg
      FROM departments d
      LEFT JOIN users u ON u.department_id = d.id AND u.role_id = (SELECT id FROM roles WHERE name = 'employee')
      LEFT JOIN mood_entries m ON m.user_id = u.id
@@ -308,7 +293,7 @@ export const buildAndEmailAdminReport = async (userId: string, userEmail: string
     `SELECT 
        f.name,
        COUNT(ef.feeling_id) as count,
-       ROUND(AVG(m.mood_score) * 2, 1) as avg_mood
+       ROUND(AVG(m.mood_score), 1) as avg_mood
      FROM entry_feelings ef
      JOIN feelings f ON ef.feeling_id = f.id
      JOIN mood_entries m ON ef.entry_id = m.id
@@ -322,7 +307,7 @@ export const buildAndEmailAdminReport = async (userId: string, userEmail: string
     `SELECT 
        c.name,
        COUNT(ec.contributor_id) as count,
-       ROUND(AVG(m.mood_score) * 2, 1) as avg_mood
+       ROUND(AVG(m.mood_score), 1) as avg_mood
      FROM entry_contributors ec
      JOIN contributors c ON ec.contributor_id = c.id
      JOIN mood_entries m ON ec.entry_id = m.id

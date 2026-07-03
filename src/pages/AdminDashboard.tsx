@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Navigate } from 'react-router-dom';
 import {
-  AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell
+  AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, Brush
 } from 'recharts';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -13,7 +13,7 @@ export const AdminDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   // Filter ranges
-  const [range, setRange] = useState<'7d' | '30d' | 'ytd'>('30d');
+  const [range] = useState<'7d' | '30d' | 'ytd'>('ytd');
   const [chartType, setChartType] = useState<'area' | 'line'>('area');
 
   // Overview Data
@@ -29,7 +29,7 @@ export const AdminDashboard: React.FC = () => {
   const [departments, setDepartments] = useState<any[]>([]);
   const [selectedDeptId, setSelectedDeptId] = useState<string | null>(null);
   const [deptDetails, setDeptDetails] = useState<any | null>(null);
-  const [deptRange, setDeptRange] = useState<'7d' | '30d' | 'ytd'>('30d');
+  const [deptRange] = useState<'7d' | '30d' | 'ytd'>('ytd');
 
   // Employees Explorer
   const [employeeSearch, setEmployeeSearch] = useState('');
@@ -46,16 +46,20 @@ export const AdminDashboard: React.FC = () => {
   const [newDeptName, setNewDeptName] = useState('');
   const [savingDept, setSavingDept] = useState(false);
 
-  // User accounts (Super Admin only)
+  // User accounts
   const [usersList, setUsersList] = useState<any[]>([]);
+  const [regEmail, setRegEmail] = useState('');
+  const [regFullName, setRegFullName] = useState('');
+  const [regDeptId, setRegDeptId] = useState('');
+  const [regSubmitting, setRegSubmitting] = useState(false);
 
   // Detailed Modal for Mood Click
   const [selectedMoodScore, setSelectedMoodScore] = useState<number | null>(null);
 
   // Admin Reports Form
-  const [reportRange, setReportRange] = useState<'7d' | '30d' | 'ytd' | 'custom'>('30d');
-  const [reportStart, setReportStart] = useState('');
-  const [reportEnd, setReportEnd] = useState('');
+  const [reportRange] = useState<'7d' | '30d' | 'ytd' | 'custom'>('ytd');
+  const [reportStart] = useState('');
+  const [reportEnd] = useState('');
   const [reportExportType, setReportExportType] = useState<'pdf' | 'csv'>('pdf');
   const [sendingReport, setSendingReport] = useState(false);
   const [reportSuccess, setReportSuccess] = useState(false);
@@ -157,9 +161,8 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
-  // Fetch users accounts (Super Admin management)
   const fetchUsers = async () => {
-    if (!accessToken || user?.role !== 'super_admin') return;
+    if (!accessToken || user?.role !== 'admin') return;
     try {
       const res = await fetch(`${API_URL}/users`, {
         headers: { 'Authorization': `Bearer ${accessToken}` },
@@ -175,6 +178,44 @@ export const AdminDashboard: React.FC = () => {
       fetchUsers();
     }
   }, [activeTab]);
+
+  const handleRegisterUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!regEmail.trim() || !accessToken) return;
+
+    setRegSubmitting(true);
+    try {
+      const res = await fetch(`${API_URL}/users/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          email: regEmail.trim(),
+          fullName: regFullName.trim() || null,
+          roleName: 'employee',
+          departmentId: regDeptId || null,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        alert('User registered successfully!');
+        setRegEmail('');
+        setRegFullName('');
+        setRegDeptId('');
+        fetchUsers();
+      } else {
+        alert(data.error || 'Failed to register user');
+      }
+    } catch (err) {
+      console.error('Register user error:', err);
+      alert('Connection error');
+    } finally {
+      setRegSubmitting(false);
+    }
+  };
 
   // Settings CRUD handlers
   const handleSaveSettings = async (e: React.FormEvent) => {
@@ -376,7 +417,7 @@ export const AdminDashboard: React.FC = () => {
 
   // Auth check
   if (!user) return <Navigate to="/login" replace />;
-  if (user.role !== 'admin' && user.role !== 'super_admin') {
+  if (user.role !== 'admin') {
     return <Navigate to="/checkin" replace />;
   }
 
@@ -392,9 +433,13 @@ export const AdminDashboard: React.FC = () => {
   // Custom tooltips
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
+      const dateObj = new Date(payload[0].payload.date);
+      const formattedDate = isNaN(dateObj.getTime())
+        ? payload[0].payload.date
+        : `Week of ${dateObj.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`;
       return (
         <div className="bg-slate-900 border border-slate-800 p-2.5 rounded-lg shadow-xl text-xs">
-          <p className="text-slate-400 mb-1">{payload[0].payload.date}</p>
+          <p className="text-slate-400 mb-1">{formattedDate}</p>
           <p className="font-bold text-white">Index Score: {payload[0].value}</p>
         </div>
       );
@@ -472,7 +517,7 @@ export const AdminDashboard: React.FC = () => {
           >
             Export Reports
           </button>
-          {user.role === 'super_admin' && (
+          {user.role === 'admin' && (
             <>
               <div className="h-px bg-stone-850 my-4" />
               <button
@@ -511,24 +556,12 @@ export const AdminDashboard: React.FC = () => {
                   <div className="flex justify-between items-center">
                     <div>
                       <h2 className="text-xl font-bold text-white">Wellbeing Overview</h2>
-                      <p className="text-xs text-stone-400 mt-1">Metrics aggregated based on selected period</p>
+                      <p className="text-xs text-stone-400 mt-1">Metrics aggregated from January (Year-to-Date)</p>
                     </div>
-                    <div className="flex bg-stone-950 p-1 rounded-xl border border-stone-800">
-                      {[
-                        { id: '30d', label: 'Last 30 Days' },
-                        { id: '7d', label: 'Last Week' },
-                        { id: 'ytd', label: 'From January' },
-                      ].map((t) => (
-                        <button
-                          key={t.id}
-                          onClick={() => setRange(t.id as any)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                            range === t.id ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
-                          }`}
-                        >
-                          {t.label}
-                        </button>
-                      ))}
+                    <div>
+                      <span className="text-xs bg-stone-950 border border-stone-800 text-stone-400 px-3.5 py-2 rounded-xl font-semibold">
+                        From January
+                      </span>
                     </div>
                   </div>
 
@@ -547,12 +580,12 @@ export const AdminDashboard: React.FC = () => {
                     <div className="glass p-6 rounded-2xl border border-stone-850 hover:border-stone-700 transition-all cursor-pointer">
                       <p className="text-xs font-bold text-stone-400 uppercase tracking-wider">Participation Rate</p>
                       <h3 className="text-4xl font-extrabold text-white mt-3">{stats.participationRate}%</h3>
-                      <p className="text-[10px] text-stone-500 mt-1">Checked-in today</p>
+                      <p className="text-[10px] text-stone-500 mt-1">Checked-in this week</p>
                     </div>
                     <div className="glass p-6 rounded-2xl border border-stone-850 hover:border-stone-700 transition-all cursor-pointer">
-                      <p className="text-xs font-bold text-stone-400 uppercase tracking-wider">Check-ins Today</p>
+                      <p className="text-xs font-bold text-stone-400 uppercase tracking-wider">Check-ins This Week</p>
                       <h3 className="text-4xl font-extrabold text-green-500 mt-3">{stats.checkinsToday}</h3>
-                      <p className="text-[10px] text-stone-500 mt-1">Submissions received today</p>
+                      <p className="text-[10px] text-stone-500 mt-1">Submissions received this week</p>
                     </div>
                   </div>
 
@@ -595,7 +628,16 @@ export const AdminDashboard: React.FC = () => {
                                   </linearGradient>
                                 </defs>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                                <XAxis dataKey="date" stroke="#64748b" fontSize={10} tickLine={false} />
+                                <XAxis
+                                  dataKey="date"
+                                  stroke="#64748b"
+                                  fontSize={10}
+                                  tickLine={false}
+                                  tickFormatter={(str) => {
+                                    const d = new Date(str);
+                                    return isNaN(d.getTime()) ? str : `Wk of ${d.getMonth() + 1}/${d.getDate()}`;
+                                  }}
+                                />
                                 <YAxis domain={[0, 10]} stroke="#64748b" fontSize={10} tickLine={false} />
                                 <Tooltip content={<CustomTooltip />} />
                                 <Area type="monotone" dataKey="score" stroke="#2563eb" strokeWidth={2} fillOpacity={1} fill="url(#colorScore)" />
@@ -603,7 +645,16 @@ export const AdminDashboard: React.FC = () => {
                             ) : (
                               <LineChart data={trends} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                                <XAxis dataKey="date" stroke="#64748b" fontSize={10} tickLine={false} />
+                                <XAxis
+                                  dataKey="date"
+                                  stroke="#64748b"
+                                  fontSize={10}
+                                  tickLine={false}
+                                  tickFormatter={(str) => {
+                                    const d = new Date(str);
+                                    return isNaN(d.getTime()) ? str : `Wk of ${d.getMonth() + 1}/${d.getDate()}`;
+                                  }}
+                                />
                                 <YAxis domain={[0, 10]} stroke="#64748b" fontSize={10} tickLine={false} />
                                 <Tooltip content={<CustomTooltip />} />
                                 <Line type="monotone" dataKey="score" stroke="#3b82f6" strokeWidth={2.5} dot={{ r: 4 }} activeDot={{ r: 6 }} />
@@ -722,8 +773,7 @@ export const AdminDashboard: React.FC = () => {
                       <div
                         key={dept.id}
                         onClick={() => {
-                          setDeptRange(range as any);
-                          loadDeptDetails(dept.id, range as any);
+                          loadDeptDetails(dept.id, 'ytd');
                         }}
                         className="glass p-6 rounded-2xl border border-slate-900 hover:border-blue-500/50 hover:bg-slate-900/40 transition-all cursor-pointer group"
                       >
@@ -739,7 +789,7 @@ export const AdminDashboard: React.FC = () => {
                             <span className="font-bold text-blue-500">{dept.moodIndex}</span>
                           </div>
                           <div className="flex justify-between text-xs">
-                            <span className="text-slate-400">Today's Participation:</span>
+                            <span className="text-slate-400">Weekly Participation:</span>
                             <span className="font-bold text-slate-200">{dept.participationRate}%</span>
                           </div>
                         </div>
@@ -747,182 +797,7 @@ export const AdminDashboard: React.FC = () => {
                     ))}
                   </div>
 
-                  {/* Department Details Modal/Panel */}
-                  {selectedDeptId && deptDetails && (
-                    <div
-                      onClick={(e) => {
-                        if (e.target === e.currentTarget) {
-                          setSelectedDeptId(null);
-                          setDeptDetails(null);
-                        }
-                      }}
-                      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-6 overflow-y-auto"
-                    >
-                      <div className="w-full max-w-4xl glass rounded-2xl p-6 shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto relative animate-fade-in">
-                        <div className="flex justify-between items-start">
-                          <button
-                            onClick={() => { setSelectedDeptId(null); setDeptDetails(null); }}
-                            className="flex items-center gap-2 text-xs font-semibold text-stone-400 hover:text-white transition-colors bg-stone-900 px-3 py-1.5 rounded-lg border border-stone-850 hover:bg-stone-800"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3.5 h-3.5">
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
-                            </svg>
-                            Back to Departments
-                          </button>
-                          
-                          <button
-                            onClick={() => { setSelectedDeptId(null); setDeptDetails(null); }}
-                            className="text-slate-400 hover:text-white text-base"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                        
-                        <div className="flex flex-col md:flex-row md:justify-between md:items-center border-b border-stone-800 pb-4 gap-4">
-                          <div>
-                            <h3 className="text-2xl font-bold text-white">{deptDetails.departmentName} Department Analytics</h3>
-                            <p className="text-xs text-stone-400">Detailed historical wellbeing data</p>
-                          </div>
-                          
-                          <div className="flex bg-stone-950 p-1 rounded-xl border border-stone-850 self-start md:self-auto">
-                            {[
-                              { id: '30d', label: 'Last 30 Days' },
-                              { id: '7d', label: 'Last Week' },
-                              { id: 'ytd', label: 'From January' },
-                            ].map((t) => (
-                              <button
-                                key={t.id}
-                                onClick={() => {
-                                  setDeptRange(t.id as any);
-                                  loadDeptDetails(selectedDeptId!, t.id as any);
-                                }}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                                  deptRange === t.id ? 'bg-blue-600 text-white shadow' : 'text-stone-400 hover:text-stone-200'
-                                }`}
-                              >
-                                {t.label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          {/* Mood distribution */}
-                          <div className="bg-slate-900/50 border border-slate-900 p-4 rounded-xl">
-                            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">Mood Distribution</h4>
-                            <div className="h-48">
-                              <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={deptDetails.distribution}>
-                                  <XAxis dataKey="name" stroke="#64748b" fontSize={9} />
-                                  <YAxis stroke="#64748b" fontSize={9} />
-                                  <Tooltip />
-                                  <Bar dataKey="count" radius={[4, 4, 0, 0]}>
-                                    {deptDetails.distribution.map((entry: any, index: number) => (
-                                      <Cell key={`cell-${index}`} fill={moodColors[entry.name]} />
-                                    ))}
-                                  </Bar>
-                                </BarChart>
-                              </ResponsiveContainer>
-                            </div>
-                          </div>
-
-                          {/* Department Trend Line Chart */}
-                          <div className="bg-slate-900/50 border border-slate-900 p-4 rounded-xl flex flex-col">
-                            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">Department Trend</h4>
-                            <div className="h-48 flex-1 min-h-[180px]">
-                              {deptDetails.trends && deptDetails.trends.length === 0 ? (
-                                <div className="h-full flex items-center justify-center text-xs text-slate-500">No historical trend data available.</div>
-                              ) : (
-                                <ResponsiveContainer width="100%" height="100%">
-                                  <LineChart data={deptDetails.trends} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="#1c1917" />
-                                    <XAxis dataKey="date" stroke="#78716c" fontSize={8} tickFormatter={(str) => {
-                                      const d = new Date(str);
-                                      return isNaN(d.getTime()) ? '' : `${d.getMonth()+1}/${d.getDate()}`;
-                                    }} />
-                                    <YAxis domain={[0, 10]} stroke="#78716c" fontSize={9} />
-                                    <Tooltip content={({ active, payload }: any) => {
-                                      if (active && payload && payload.length) {
-                                        return (
-                                          <div className="bg-stone-900 border border-stone-850 p-2.5 rounded-lg shadow-xl text-[10px]">
-                                            <p className="text-stone-500 mb-1">{new Date(payload[0].payload.date).toLocaleDateString()}</p>
-                                            <p className="font-bold text-white">Score: {payload[0].value}</p>
-                                          </div>
-                                        );
-                                      }
-                                      return null;
-                                    }} />
-                                    <Line type="monotone" dataKey="score" stroke="#3b82f6" strokeWidth={2} dot={{ r: 2.5 }} activeDot={{ r: 4.5 }} />
-                                  </LineChart>
-                                </ResponsiveContainer>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Top Feelings & Contributors */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          <div className="bg-slate-900/50 border border-slate-900 p-4 rounded-xl">
-                            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">Top Feelings</h4>
-                            <div className="space-y-2">
-                              {deptDetails.topFeelings.map((f: any) => (
-                                <div key={f.name} className="flex justify-between text-xs py-1 border-b border-slate-950">
-                                  <span className="text-slate-300">{f.name}</span>
-                                  <span className="text-slate-500 font-bold">{f.count}x</span>
-                                </div>
-                              ))}
-                              {deptDetails.topFeelings.length === 0 && <p className="text-xs text-slate-500">No data</p>}
-                            </div>
-                          </div>
-
-                          <div className="bg-slate-900/50 border border-slate-900 p-4 rounded-xl">
-                            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">Top Impact factors</h4>
-                            <div className="space-y-2">
-                              {deptDetails.topContributors.map((c: any) => (
-                                <div key={c.name} className="flex justify-between text-xs py-1 border-b border-slate-950">
-                                  <span className="text-slate-300">{c.name}</span>
-                                  <span className="text-slate-500 font-bold">{c.count}x</span>
-                                </div>
-                              ))}
-                              {deptDetails.topContributors.length === 0 && <p className="text-xs text-slate-500">No data</p>}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Employees List */}
-                        <div className="bg-slate-900/50 border border-slate-900 rounded-xl overflow-hidden">
-                          <div className="p-4 border-b border-slate-900">
-                            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Department Members</h4>
-                          </div>
-                          <div className="overflow-x-auto">
-                            <table className="w-full text-left text-xs">
-                              <thead className="bg-slate-900 text-slate-400 font-semibold uppercase tracking-wider">
-                                <tr>
-                                  <th className="p-4">Name</th>
-                                  <th className="p-4">Email</th>
-                                  <th className="p-4 text-center">Mood Index</th>
-                                  <th className="p-4 text-right">Last Check-In</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-slate-900 text-slate-300">
-                                {deptDetails.employees.map((emp: any) => (
-                                  <tr key={emp.id} className="hover:bg-slate-900/30">
-                                    <td className="p-4 font-bold text-white">{emp.name}</td>
-                                    <td className="p-4 text-slate-400">{emp.email}</td>
-                                    <td className="p-4 text-center font-bold text-blue-500">{emp.moodIndex || '—'}</td>
-                                    <td className="p-4 text-right text-slate-400">
-                                      {emp.last_check_in ? new Date(emp.last_check_in).toLocaleDateString() : 'Never'}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-
-                      </div>
-                    </div>
-                  )}
+                  {/* Department Details Modal was moved to root level */}
 
                 </div>
               )}
@@ -995,109 +870,7 @@ export const AdminDashboard: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Employee Details Modal */}
-                  {selectedEmpId && empDetails && (
-                    <div
-                      onClick={(e) => {
-                        if (e.target === e.currentTarget) {
-                          setSelectedEmpId(null);
-                          setEmpDetails(null);
-                        }
-                      }}
-                      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-6 overflow-y-auto"
-                    >
-                      <div className="w-full max-w-4xl glass rounded-2xl p-6 shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto relative animate-fade-in">
-                        <button
-                          onClick={() => { setSelectedEmpId(null); setEmpDetails(null); }}
-                          className="absolute top-4 right-4 text-slate-400 hover:text-white"
-                        >
-                          ✕
-                        </button>
-
-                        <div className="border-b border-stone-800 pb-4">
-                          <h3 className="text-2xl font-bold text-white">{empDetails.profile.name}</h3>
-                          <p className="text-xs text-stone-400 mt-1">
-                            {empDetails.profile.department || 'Other'} Department • {empDetails.profile.email}
-                          </p>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                          {/* Left: Stats & Common categories */}
-                          <div className="space-y-4">
-                            {/* Average Mood Index Card */}
-                            <div className="bg-stone-950/50 border border-stone-850 p-4 rounded-xl text-center">
-                              <h4 className="text-[10px] font-bold uppercase tracking-wider text-stone-500 mb-1">Employee Mood Index</h4>
-                              <p className="text-3xl font-extrabold text-blue-500">
-                                {empDetails.trends && empDetails.trends.length > 0
-                                  ? (empDetails.trends.reduce((sum: number, t: any) => sum + parseFloat(t.score), 0) / empDetails.trends.length).toFixed(1)
-                                  : '—'}
-                              </p>
-                              <p className="text-[9px] text-stone-600 mt-1">30-day rolling average</p>
-                            </div>
-
-                            <div className="bg-slate-900/50 border border-slate-900 p-4 rounded-xl">
-                              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Most Common Feelings</h4>
-                              <div className="space-y-1.5">
-                                {empDetails.commonFeelings.map((f: any) => (
-                                  <div key={f.name} className="flex justify-between text-xs">
-                                    <span className="text-slate-300">{f.name}</span>
-                                    <span className="text-slate-500">{f.count}x</span>
-                                  </div>
-                                ))}
-                                {empDetails.commonFeelings.length === 0 && <p className="text-xs text-slate-500">No data</p>}
-                              </div>
-                            </div>
-                            <div className="bg-slate-900/50 border border-slate-900 p-4 rounded-xl">
-                              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Most Common Impact factors</h4>
-                              <div className="space-y-1.5">
-                                {empDetails.commonContributors.map((c: any) => (
-                                  <div key={c.name} className="flex justify-between text-xs">
-                                    <span className="text-slate-300">{c.name}</span>
-                                    <span className="text-slate-500">{c.count}x</span>
-                                  </div>
-                                ))}
-                                {empDetails.commonContributors.length === 0 && <p className="text-xs text-slate-500">No data</p>}
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Middle/Right: Trend Line Chart */}
-                          <div className="md:col-span-2 bg-slate-900/50 border border-slate-900 p-4 rounded-xl flex flex-col">
-                            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">Wellbeing Trend (Last 30 Days)</h4>
-                            <div className="h-48 flex-1 min-h-[180px]">
-                              {empDetails.trends && empDetails.trends.length === 0 ? (
-                                <div className="h-full flex items-center justify-center text-xs text-slate-500">No historical trend data available.</div>
-                              ) : (
-                                <ResponsiveContainer width="100%" height="100%">
-                                  <LineChart data={empDetails.trends} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="#1c1917" />
-                                    <XAxis dataKey="date" stroke="#78716c" fontSize={8} tickFormatter={(str) => {
-                                      const d = new Date(str);
-                                      return isNaN(d.getTime()) ? '' : `${d.getMonth()+1}/${d.getDate()}`;
-                                    }} />
-                                    <YAxis domain={[0, 10]} stroke="#78716c" fontSize={9} />
-                                    <Tooltip content={({ active, payload }: any) => {
-                                      if (active && payload && payload.length) {
-                                        return (
-                                          <div className="bg-stone-900 border border-stone-850 p-2.5 rounded-lg shadow-xl text-[10px]">
-                                            <p className="text-stone-500 mb-1">{new Date(payload[0].payload.date).toLocaleDateString()}</p>
-                                            <p className="font-bold text-white">Score: {payload[0].value}</p>
-                                          </div>
-                                        );
-                                      }
-                                      return null;
-                                    }} />
-                                    <Line type="monotone" dataKey="score" stroke="#3b82f6" strokeWidth={2} dot={{ r: 2.5 }} activeDot={{ r: 4.5 }} />
-                                  </LineChart>
-                                </ResponsiveContainer>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-
-                      </div>
-                    </div>
-                  )}
+                  {/* Employee Details Modal was moved to root level */}
 
                 </div>
               )}
@@ -1117,46 +890,12 @@ export const AdminDashboard: React.FC = () => {
                       <div className="space-y-4">
                         <div>
                           <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                            Select Range
+                            Report Period
                           </label>
-                          <select
-                            value={reportRange}
-                            onChange={(e) => setReportRange(e.target.value as any)}
-                            className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-xs text-white"
-                          >
-                            <option value="30d">Last 30 Days</option>
-                            <option value="7d">Last Week</option>
-                            <option value="ytd">From January</option>
-                            <option value="custom">Custom Date Range</option>
-                          </select>
-                        </div>
-
-                        {reportRange === 'custom' && (
-                          <div className="grid grid-cols-2 gap-4">
-                            <div>
-                              <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                                Start Date
-                              </label>
-                              <input
-                                type="date"
-                                value={reportStart}
-                                onChange={(e) => setReportStart(e.target.value)}
-                                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-xs text-white"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                                End Date
-                              </label>
-                              <input
-                                type="date"
-                                value={reportEnd}
-                                onChange={(e) => setReportEnd(e.target.value)}
-                                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-xs text-white"
-                              />
-                            </div>
+                          <div className="w-full bg-slate-900/50 border border-slate-800 rounded-xl px-4 py-3 text-xs text-slate-300 font-medium">
+                            From January (Year to Date)
                           </div>
-                        )}
+                        </div>
 
                         <div>
                           <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
@@ -1218,6 +957,56 @@ export const AdminDashboard: React.FC = () => {
                     <p className="text-xs text-slate-400 mt-1">Configure user accounts and administrative roles</p>
                   </div>
 
+                  {/* Register User Form */}
+                  <div className="glass p-6 rounded-2xl border border-stone-850">
+                    <h3 className="font-bold text-white mb-4 text-xs uppercase tracking-wider">Register New User / Email</h3>
+                    <form onSubmit={handleRegisterUser} className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                      <div>
+                        <label className="block text-slate-400 text-[10px] uppercase font-bold tracking-wider mb-2">Email Address</label>
+                        <input
+                          type="email"
+                          placeholder="employee@company.com"
+                          value={regEmail}
+                          onChange={(e) => setRegEmail(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-900 rounded-xl px-4 py-2.5 text-xs text-white"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-400 text-[10px] uppercase font-bold tracking-wider mb-2">Full Name (Optional)</label>
+                        <input
+                          type="text"
+                          placeholder="John Doe"
+                          value={regFullName}
+                          onChange={(e) => setRegFullName(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-900 rounded-xl px-4 py-2.5 text-xs text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-400 text-[10px] uppercase font-bold tracking-wider mb-2">Department (Optional)</label>
+                        <select
+                          value={regDeptId}
+                          onChange={(e) => setRegDeptId(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-900 rounded-xl px-4 py-2.5 text-xs text-white"
+                        >
+                          <option value="">None (Onboard Later)</option>
+                          {departments.map((d) => (
+                            <option key={d.id} value={d.id}>{d.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <button
+                          type="submit"
+                          disabled={regSubmitting}
+                          className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 text-white font-semibold py-2.5 px-4 rounded-xl text-xs transition-all shadow-md"
+                        >
+                          {regSubmitting ? 'Registering...' : 'Register User'}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+
                   <div className="glass rounded-2xl border border-slate-900 overflow-hidden">
                     <table className="w-full text-left text-xs">
                       <thead className="bg-slate-900 text-slate-400 font-semibold uppercase">
@@ -1237,7 +1026,6 @@ export const AdminDashboard: React.FC = () => {
                             <td className="p-4 text-slate-400">{usr.department || '—'}</td>
                             <td className="p-4">
                               <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                usr.role === 'super_admin' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
                                 usr.role === 'admin' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
                                 'bg-slate-800 text-slate-400 border border-slate-700'
                               }`}>
@@ -1245,7 +1033,7 @@ export const AdminDashboard: React.FC = () => {
                               </span>
                             </td>
                             <td className="p-4 text-right space-x-2">
-                              {usr.role !== 'super_admin' && (
+                              {usr.email.toLowerCase() !== 'siddhanthsrinivasan@gmail.com' && usr.email !== user?.email && (
                                 <>
                                   <button
                                     onClick={() => handlePromoteDemoteUser(usr.id, usr.role)}
@@ -1434,60 +1222,361 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               )}
 
-              {/* Mood Drilldown Modal */}
-              {selectedMoodScore !== null && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-6 overflow-y-auto">
-                  <div className="w-full max-w-xl glass rounded-2xl p-6 shadow-2xl space-y-6 relative animate-fade-in">
-                    <button
-                      onClick={() => setSelectedMoodScore(null)}
-                      className="absolute top-4 right-4 text-slate-400 hover:text-white"
-                    >
-                      ✕
-                    </button>
-                    <h3 className="text-lg font-bold text-white border-b border-slate-900 pb-3 flex items-center gap-2">
-                      <span className="w-3.5 h-3.5 rounded-full" style={{ backgroundColor: moodColors[selectedMoodScore === 5 ? 'Great' : selectedMoodScore === 4 ? 'Good' : selectedMoodScore === 3 ? 'Okay' : selectedMoodScore === 2 ? 'Bad' : 'Awful'] }} />
-                      Breakdown for score: {selectedMoodScore * 2} ({selectedMoodScore === 5 ? 'Great' : selectedMoodScore === 4 ? 'Good' : selectedMoodScore === 3 ? 'Okay' : selectedMoodScore === 2 ? 'Bad' : 'Awful'})
-                    </h3>
-                    <p className="text-xs text-slate-400">
-                      Check-ins scored with this rating are highly associated with the following indicators:
-                    </p>
-                    
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">Associated Feelings</h4>
-                        <div className="space-y-1 bg-slate-950 p-3 rounded-xl border border-slate-900 max-h-[160px] overflow-y-auto">
-                          {feelings
-                            .filter(f => f.moodCorrelation >= (selectedMoodScore * 2 - 1) && f.moodCorrelation <= (selectedMoodScore * 2 + 1))
-                            .map(f => (
-                              <div key={f.name} className="flex justify-between text-xs py-0.5">
-                                <span className="text-slate-300">{f.name}</span>
-                                <span className="text-slate-500 font-bold">{f.count}x</span>
-                              </div>
-                            ))}
-                        </div>
-                      </div>
-                      <div>
-                        <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">Associated Contributors</h4>
-                        <div className="space-y-1 bg-slate-950 p-3 rounded-xl border border-slate-900 max-h-[160px] overflow-y-auto">
-                          {contributors
-                            .filter(c => c.moodCorrelation >= (selectedMoodScore * 2 - 1.5) && c.moodCorrelation <= (selectedMoodScore * 2 + 1.5))
-                            .map(c => (
-                              <div key={c.name} className="flex justify-between text-xs py-0.5">
-                                <span className="text-slate-300">{c.name}</span>
-                                <span className="text-slate-500 font-bold">{c.count}x</span>
-                              </div>
-                            ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
             </div>
           )}
         </main>
       </div>
+
+      {/* MODALS RENDERED AT ROOT VIEWPORT LEVEL FOR CORRECT Z-INDEX STACKING */}
+      {/* 1. Department Details Modal */}
+      {selectedDeptId && (
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setSelectedDeptId(null);
+              setDeptDetails(null);
+            }
+          }}
+          className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-sm p-6 flex justify-center items-start"
+        >
+          <div className="w-full max-w-4xl bg-stone-900 border border-stone-800 rounded-2xl p-6 shadow-2xl space-y-6 my-8 relative animate-fade-in">
+            <div className="flex justify-between items-start">
+              <button
+                onClick={() => { setSelectedDeptId(null); setDeptDetails(null); }}
+                className="flex items-center gap-2 text-xs font-semibold text-stone-400 hover:text-white transition-colors bg-stone-900 px-3 py-1.5 rounded-lg border border-stone-850 hover:bg-stone-800"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3.5 h-3.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
+                </svg>
+                Back to Departments
+              </button>
+              
+              <button
+                onClick={() => { setSelectedDeptId(null); setDeptDetails(null); }}
+                className="text-slate-400 hover:text-white text-base"
+              >
+                ✕
+              </button>
+            </div>
+            
+            {!deptDetails ? (
+              <div className="h-64 flex flex-col items-center justify-center gap-3">
+                <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                <p className="text-xs text-stone-400">Loading department analytics...</p>
+              </div>
+            ) : (
+              <>
+                <div className="flex flex-col md:flex-row md:justify-between md:items-center border-b border-stone-800 pb-4 gap-4">
+                  <div>
+                    <h3 className="text-2xl font-bold text-white">{deptDetails.departmentName} Department Analytics</h3>
+                    <p className="text-xs text-stone-400">Detailed historical wellbeing data</p>
+                  </div>
+                  <div>
+                    <span className="text-xs bg-stone-950 border border-stone-800 text-stone-400 px-3.5 py-2 rounded-xl font-semibold">
+                      From January
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Mood distribution */}
+                  <div className="bg-slate-900/50 border border-slate-900 p-4 rounded-xl">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">Mood Distribution</h4>
+                    <div className="h-48">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={deptDetails.distribution || []}>
+                          <XAxis dataKey="name" stroke="#64748b" fontSize={9} />
+                          <YAxis stroke="#64748b" fontSize={9} />
+                          <Tooltip />
+                          <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                            {(deptDetails.distribution || []).map((entry: any, index: number) => (
+                              <Cell key={`cell-${index}`} fill={moodColors[entry.name] || '#3b82f6'} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  {/* Department Trend Line Chart */}
+                  <div className="bg-slate-900/50 border border-slate-900 p-4 rounded-xl flex flex-col">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">Department Trend</h4>
+                    <div className="h-48 flex-1 min-h-[180px]">
+                      {!deptDetails.trends || deptDetails.trends.length === 0 ? (
+                        <div className="h-full flex items-center justify-center text-xs text-slate-500">No historical trend data available.</div>
+                      ) : (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={deptDetails.trends} margin={{ top: 10, right: 10, left: -20, bottom: 15 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#1c1917" />
+                            <XAxis dataKey="date" stroke="#78716c" fontSize={8} tickFormatter={(str) => {
+                              const d = new Date(str);
+                              return isNaN(d.getTime()) ? '' : `Wk of ${d.getMonth()+1}/${d.getDate()}`;
+                            }} />
+                            <YAxis domain={[0, 10]} stroke="#78716c" fontSize={9} />
+                            <Tooltip content={({ active, payload }: any) => {
+                              if (active && payload && payload.length) {
+                                const dObj = new Date(payload[0].payload.date);
+                                const formattedD = isNaN(dObj.getTime())
+                                  ? payload[0].payload.date
+                                  : `Week of ${dObj.toLocaleDateString()}`;
+                                return (
+                                  <div className="bg-stone-900 border border-stone-850 p-2.5 rounded-lg shadow-xl text-[10px]">
+                                    <p className="text-stone-500 mb-1">{formattedD}</p>
+                                    <p className="font-bold text-white">Score: {payload[0].value}</p>
+                                  </div>
+                                );
+                              }
+                              return null;
+                            }} />
+                            <Line type="monotone" dataKey="score" stroke="#3b82f6" strokeWidth={2} dot={{ r: 2.5 }} activeDot={{ r: 4.5 }} />
+                            <Brush dataKey="date" height={20} stroke="#3b82f6" fill="#1c1917" tickFormatter={(str) => {
+                              const d = new Date(str);
+                              return isNaN(d.getTime()) ? '' : `${d.getMonth()+1}/${d.getDate()}`;
+                            }} />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Top Feelings & Contributors */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-slate-900/50 border border-slate-900 p-4 rounded-xl">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">Top Feelings</h4>
+                    <div className="space-y-2">
+                      {(deptDetails.topFeelings || []).map((f: any) => (
+                        <div key={f.name} className="flex justify-between text-xs py-1 border-b border-slate-950">
+                          <span className="text-slate-300">{f.name}</span>
+                          <span className="text-slate-500 font-bold">{f.count}x</span>
+                        </div>
+                      ))}
+                      {(!deptDetails.topFeelings || deptDetails.topFeelings.length === 0) && <p className="text-xs text-slate-500">No data</p>}
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-900/50 border border-slate-900 p-4 rounded-xl">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">Top Impact factors</h4>
+                    <div className="space-y-2">
+                      {(deptDetails.topContributors || []).map((c: any) => (
+                        <div key={c.name} className="flex justify-between text-xs py-1 border-b border-slate-950">
+                          <span className="text-slate-300">{c.name}</span>
+                          <span className="text-slate-500 font-bold">{c.count}x</span>
+                        </div>
+                      ))}
+                      {(!deptDetails.topContributors || deptDetails.topContributors.length === 0) && <p className="text-xs text-slate-500">No data</p>}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Employees List */}
+                <div className="bg-slate-900/50 border border-slate-900 rounded-xl overflow-hidden">
+                  <div className="p-4 border-b border-slate-900">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Department Members</h4>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-900 text-slate-400 font-semibold uppercase tracking-wider">
+                        <tr>
+                          <th className="p-4">Name</th>
+                          <th className="p-4">Email</th>
+                          <th className="p-4 text-center">Mood Index</th>
+                          <th className="p-4 text-right">Last Check-In</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-900 text-slate-300">
+                        {(deptDetails.employees || []).map((emp: any) => (
+                          <tr key={emp.id} className="hover:bg-slate-900/30">
+                            <td className="p-4 font-bold text-white">{emp.name}</td>
+                            <td className="p-4 text-slate-400">{emp.email}</td>
+                            <td className="p-4 text-center font-bold text-blue-500">{emp.moodIndex || '—'}</td>
+                            <td className="p-4 text-right text-slate-400">
+                              {emp.last_check_in ? new Date(emp.last_check_in).toLocaleDateString() : 'Never'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 2. Employee Details Modal */}
+      {selectedEmpId && (
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setSelectedEmpId(null);
+              setEmpDetails(null);
+            }
+          }}
+          className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-sm p-6 flex justify-center items-start"
+        >
+          <div className="my-8 w-full max-w-4xl bg-stone-900 border border-stone-800 rounded-2xl p-6 shadow-2xl space-y-6 relative animate-fade-in">
+            <button
+              onClick={() => { setSelectedEmpId(null); setEmpDetails(null); }}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white"
+            >
+              ✕
+            </button>
+
+            {!empDetails ? (
+              <div className="h-64 flex flex-col items-center justify-center gap-3">
+                <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                <p className="text-xs text-stone-400">Loading employee details...</p>
+              </div>
+            ) : (
+              <>
+                <div className="border-b border-stone-850 pb-4">
+                  <h3 className="text-2xl font-bold text-white">{empDetails.profile?.name || 'Employee Profile'}</h3>
+                  <p className="text-xs text-stone-400 mt-1">
+                    {empDetails.profile?.department || 'Other'} Department • {empDetails.profile?.email}
+                  </p>
+                  <p className="text-[10px] text-stone-500 mt-1.5 font-medium">
+                    Last wellbeing check-in: {empDetails.profile?.last_check_in ? new Date(empDetails.profile.last_check_in).toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' }) : 'Never'}
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {/* Left: Stats & Common categories */}
+                  <div className="space-y-4">
+                    {/* Average Mood Index Card */}
+                    <div className="bg-stone-950/50 border border-stone-850 p-4 rounded-xl text-center">
+                      <h4 className="text-[10px] font-bold uppercase tracking-wider text-stone-500 mb-1">Employee Mood Index</h4>
+                      <p className="text-3xl font-extrabold text-blue-500">
+                        {empDetails.trends && empDetails.trends.length > 0
+                          ? (empDetails.trends.reduce((sum: number, t: any) => sum + parseFloat(t.score), 0) / empDetails.trends.length).toFixed(1)
+                          : '—'}
+                      </p>
+                      <p className="text-[9px] text-stone-600 mt-1">30-day rolling average</p>
+                    </div>
+
+                    <div className="bg-slate-900/50 border border-slate-900 p-4 rounded-xl">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Most Common Feelings</h4>
+                      <div className="space-y-1.5">
+                        {(empDetails.commonFeelings || []).map((f: any) => (
+                          <div key={f.name} className="flex justify-between text-xs">
+                            <span className="text-slate-300">{f.name}</span>
+                            <span className="text-slate-500">{f.count}x</span>
+                          </div>
+                        ))}
+                        {(!empDetails.commonFeelings || empDetails.commonFeelings.length === 0) && <p className="text-xs text-slate-500">No data</p>}
+                      </div>
+                    </div>
+                    <div className="bg-slate-900/50 border border-slate-900 p-4 rounded-xl">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Most Common Impact factors</h4>
+                      <div className="space-y-1.5">
+                        {(empDetails.commonContributors || []).map((c: any) => (
+                          <div key={c.name} className="flex justify-between text-xs">
+                            <span className="text-slate-300">{c.name}</span>
+                            <span className="text-slate-500">{c.count}x</span>
+                          </div>
+                        ))}
+                        {(!empDetails.commonContributors || empDetails.commonContributors.length === 0) && <p className="text-xs text-slate-500">No data</p>}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Middle/Right: Trend Line Chart */}
+                  <div className="md:col-span-2 bg-slate-900/50 border border-slate-900 p-4 rounded-xl flex flex-col">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">Wellbeing Trend (From January)</h4>
+                    <div className="h-48 flex-1 min-h-[180px]">
+                      {!empDetails.trends || empDetails.trends.length === 0 ? (
+                        <div className="h-full flex items-center justify-center text-xs text-slate-500">No historical trend data available.</div>
+                      ) : (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={empDetails.trends} margin={{ top: 10, right: 10, left: -20, bottom: 15 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#1c1917" />
+                            <XAxis dataKey="date" stroke="#78716c" fontSize={8} tickFormatter={(str) => {
+                              const d = new Date(str);
+                              return isNaN(d.getTime()) ? '' : `Wk of ${d.getMonth()+1}/${d.getDate()}`;
+                            }} />
+                            <YAxis domain={[0, 10]} stroke="#78716c" fontSize={9} />
+                            <Tooltip content={({ active, payload }: any) => {
+                              if (active && payload && payload.length) {
+                                const dObj = new Date(payload[0].payload.date);
+                                const formattedD = isNaN(dObj.getTime())
+                                  ? payload[0].payload.date
+                                  : `Week of ${dObj.toLocaleDateString()}`;
+                                return (
+                                  <div className="bg-stone-900 border border-stone-850 p-2.5 rounded-lg shadow-xl text-[10px]">
+                                    <p className="text-stone-500 mb-1">{formattedD}</p>
+                                    <p className="font-bold text-white">Score: {payload[0].value}</p>
+                                  </div>
+                                );
+                              }
+                              return null;
+                            }} />
+                            <Line type="monotone" dataKey="score" stroke="#3b82f6" strokeWidth={2} dot={{ r: 2.5 }} activeDot={{ r: 4.5 }} />
+                            <Brush dataKey="date" height={20} stroke="#3b82f6" fill="#1c1917" tickFormatter={(str) => {
+                              const d = new Date(str);
+                              return isNaN(d.getTime()) ? '' : `${d.getMonth()+1}/${d.getDate()}`;
+                            }} />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 3. Mood Drilldown Modal */}
+      {selectedMoodScore !== null && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-sm p-6 flex justify-center items-start">
+          <div className="my-8 w-full max-w-xl bg-stone-900 border border-stone-800 rounded-2xl p-6 shadow-2xl space-y-6 relative animate-fade-in">
+            <button
+              onClick={() => setSelectedMoodScore(null)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white"
+            >
+              ✕
+            </button>
+            <h3 className="text-lg font-bold text-white border-b border-slate-900 pb-3 flex items-center gap-2">
+              <span className="w-3.5 h-3.5 rounded-full" style={{ backgroundColor: moodColors[selectedMoodScore === 5 ? 'Great' : selectedMoodScore === 4 ? 'Good' : selectedMoodScore === 3 ? 'Okay' : selectedMoodScore === 2 ? 'Bad' : 'Awful'] }} />
+              Breakdown for score: {selectedMoodScore * 2} ({selectedMoodScore === 5 ? 'Great' : selectedMoodScore === 4 ? 'Good' : selectedMoodScore === 3 ? 'Okay' : selectedMoodScore === 2 ? 'Bad' : 'Awful'})
+            </h3>
+            <p className="text-xs text-slate-400">
+              Check-ins scored with this rating are highly associated with the following indicators:
+            </p>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">Associated Feelings</h4>
+                <div className="space-y-1 bg-slate-950 p-3 rounded-xl border border-slate-900 max-h-[160px] overflow-y-auto">
+                  {feelings
+                    .filter(f => f.moodCorrelation >= (selectedMoodScore * 2 - 1) && f.moodCorrelation <= (selectedMoodScore * 2 + 1))
+                    .map(f => (
+                      <div key={f.name} className="flex justify-between text-xs py-0.5">
+                        <span className="text-slate-300">{f.name}</span>
+                        <span className="text-slate-500 font-bold">{f.count}x</span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+              <div>
+                <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">Associated Contributors</h4>
+                <div className="space-y-1 bg-slate-950 p-3 rounded-xl border border-slate-900 max-h-[160px] overflow-y-auto">
+                  {contributors
+                    .filter(c => c.moodCorrelation >= (selectedMoodScore * 2 - 1.5) && c.moodCorrelation <= (selectedMoodScore * 2 + 1.5))
+                    .map(c => (
+                      <div key={c.name} className="flex justify-between text-xs py-0.5">
+                        <span className="text-slate-300">{c.name}</span>
+                        <span className="text-slate-500 font-bold">{c.count}x</span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

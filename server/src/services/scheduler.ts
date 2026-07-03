@@ -23,13 +23,13 @@ export const sendMorningReminders = async () => {
       
       await sendEmail({
         to: emp.email,
-        subject: 'How is your day today?',
+        subject: 'How was your week?',
         html: `
           <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
             <h2 style="color: #0f172a; margin-bottom: 16px;">Good morning, ${firstName}!</h2>
-            <p style="color: #475569; font-size: 16px; line-height: 24px;">How is your day going today? Check in and let us know in under 15 seconds.</p>
+            <p style="color: #475569; font-size: 16px; line-height: 24px;">How was your week overall? Check in and let us know in under 15 seconds.</p>
             <div style="text-align: center; margin: 30px 0;">
-              <a href="${frontendUrl}" style="background-color: #2563eb; color: #ffffff; padding: 12px 24px; border-radius: 6px; font-weight: bold; text-decoration: none; display: inline-block;">Complete Daily Check-In</a>
+              <a href="${frontendUrl}" style="background-color: #2563eb; color: #ffffff; padding: 12px 24px; border-radius: 6px; font-weight: bold; text-decoration: none; display: inline-block;">Complete Weekly Check-In</a>
             </div>
             <p style="color: #94a3b8; font-size: 13px;">You are receiving this because you are registered on the Employee Mood Index.</p>
           </div>
@@ -52,7 +52,7 @@ export const sendAfternoonReminders = async () => {
        JOIN roles r ON u.role_id = r.id
        WHERE r.name = 'employee' AND u.full_name IS NOT NULL
        AND u.id NOT IN (
-         SELECT user_id FROM mood_entries WHERE created_at >= CURRENT_DATE
+         SELECT user_id FROM mood_entries WHERE created_at >= DATE_TRUNC('week', NOW())
        )`
     );
 
@@ -61,15 +61,15 @@ export const sendAfternoonReminders = async () => {
 
       await sendEmail({
         to: emp.email,
-        subject: 'Reminder: Complete your check-in today',
+        subject: 'Reminder: Complete your weekly check-in',
         html: `
           <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
             <h2 style="color: #0f172a; margin-bottom: 16px;">Hi ${firstName},</h2>
-            <p style="color: #475569; font-size: 16px; line-height: 24px;">Don't forget to submit your mood check-in for today. It takes less than 15 seconds!</p>
+            <p style="color: #475569; font-size: 16px; line-height: 24px;">Don't forget to submit your weekly wellbeing check-in. It takes less than 15 seconds!</p>
             <div style="text-align: center; margin: 30px 0;">
               <a href="${frontendUrl}" style="background-color: #f97316; color: #ffffff; padding: 12px 24px; border-radius: 6px; font-weight: bold; text-decoration: none; display: inline-block;">Check In Now</a>
             </div>
-            <p style="color: #94a3b8; font-size: 13px;">This is a friendly reminder sent only if your daily check-in is incomplete by 4:00 PM.</p>
+            <p style="color: #94a3b8; font-size: 13px;">This is a friendly reminder sent only if your weekly check-in is incomplete.</p>
           </div>
         `,
         emailType: 'Reminder_4PM',
@@ -88,7 +88,7 @@ export const sendMonthlyAdminReports = async () => {
     const adminsRes = await query(
       `SELECT u.id, u.email FROM users u
        JOIN roles r ON u.role_id = r.id
-       WHERE r.name = 'super_admin'`
+       WHERE r.name = 'admin'`
     );
 
     for (const admin of adminsRes.rows) {
@@ -125,7 +125,7 @@ export const initOrRescheduleReminders = async () => {
     morningMinute = parseInt(morningMatch[2]);
   }
 
-  console.log(`Scheduling morning check-in reminder for ${reminderTime} (${morningHour}:${morningMinute}) on weekdays...`);
+  console.log(`Scheduling morning check-in reminder for ${reminderTime} (${morningHour}:${morningMinute}) on Fridays...`);
 
   // Stop existing morning task if running
   if (morningTask) {
@@ -133,7 +133,7 @@ export const initOrRescheduleReminders = async () => {
   }
 
   // Schedule new morning task
-  morningTask = cron.schedule(`${morningMinute} ${morningHour} * * 1-5`, async () => {
+  morningTask = cron.schedule(`${morningMinute} ${morningHour} * * 5`, async () => {
     try {
       await sendMorningReminders();
     } catch (err) {
@@ -150,7 +150,7 @@ export const initOrRescheduleReminders = async () => {
     afternoonMinute = parseInt(afternoonMatch[2]);
   }
 
-  console.log(`Scheduling afternoon incomplete check-in reminder for ${afternoonReminderTime} (${afternoonHour}:${afternoonMinute}) on weekdays...`);
+  console.log(`Scheduling afternoon incomplete check-in reminder for ${afternoonReminderTime} (${afternoonHour}:${afternoonMinute}) on Fridays...`);
 
   // Stop existing afternoon task if running
   if (afternoonTask) {
@@ -158,7 +158,7 @@ export const initOrRescheduleReminders = async () => {
   }
 
   // Schedule new afternoon task
-  afternoonTask = cron.schedule(`${afternoonMinute} ${afternoonHour} * * 1-5`, async () => {
+  afternoonTask = cron.schedule(`${afternoonMinute} ${afternoonHour} * * 5`, async () => {
     try {
       await sendAfternoonReminders();
     } catch (err) {

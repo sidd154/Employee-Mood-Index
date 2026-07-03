@@ -7,18 +7,33 @@ export const getTodayStatus = async (req: AuthenticatedRequest, res: Response) =
   if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
 
   try {
+    const today = new Date();
+    const dayOfWeek = today.getDay(); // 0 = Sunday, 1-4 = Mon-Thu, 5-6 = Fri-Sat
+    const isBlockedDay = dayOfWeek >= 1 && dayOfWeek <= 4;
+
     const checkinRes = await query(
       `SELECT id, mood_score, journal_text, created_at 
        FROM mood_entries 
-       WHERE user_id = $1 AND created_at >= CURRENT_DATE
+       WHERE user_id = $1 AND created_at >= DATE_TRUNC('week', NOW())
        ORDER BY created_at DESC LIMIT 1`,
       [req.user.id]
     );
 
     const completed = checkinRes.rows.length > 0;
 
+    const lastCheckinRes = await query(
+      `SELECT mood_score 
+       FROM mood_entries 
+       WHERE user_id = $1
+       ORDER BY created_at DESC LIMIT 1`,
+      [req.user.id]
+    );
+    const lastWeekScore = lastCheckinRes.rows.length > 0 ? lastCheckinRes.rows[0].mood_score : null;
+
     res.json({
       completed,
+      isBlockedDay,
+      lastWeekScore,
       checkin: completed ? checkinRes.rows[0] : null,
     });
   } catch (error: any) {
@@ -30,21 +45,29 @@ export const getTodayStatus = async (req: AuthenticatedRequest, res: Response) =
 export const createCheckin = async (req: AuthenticatedRequest, res: Response) => {
   if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
 
+  const today = new Date();
+  const dayOfWeek = today.getDay(); // 0 = Sunday, 1-4 = Mon-Thu, 5-6 = Fri-Sat
+  const isBlockedDay = dayOfWeek >= 1 && dayOfWeek <= 4;
+
+  if (isBlockedDay) {
+    return res.status(400).json({ error: 'Check-ins are only allowed Friday through Sunday.' });
+  }
+
   const { moodScore, feelings, contributors } = req.body;
 
-  if (!moodScore || moodScore < 1 || moodScore > 5) {
-    return res.status(400).json({ error: 'Valid mood score (1-5) is required' });
+  if (!moodScore || moodScore < 1 || moodScore > 10) {
+    return res.status(400).json({ error: 'Valid mood score (1-10) is required' });
   }
 
   try {
     const checkinRes = await query(
       `SELECT 1 FROM mood_entries 
-       WHERE user_id = $1 AND created_at >= CURRENT_DATE`,
+       WHERE user_id = $1 AND created_at >= DATE_TRUNC('week', NOW())`,
       [req.user.id]
     );
 
     if (checkinRes.rows.length > 0) {
-      return res.status(400).json({ error: 'You have already checked in today' });
+      return res.status(400).json({ error: 'You have already checked in this week' });
     }
 
     await query('BEGIN');
@@ -58,9 +81,11 @@ export const createCheckin = async (req: AuthenticatedRequest, res: Response) =>
     const entryId = insertMoodRes.rows[0].id;
 
     if (feelings && Array.isArray(feelings) && feelings.length > 0) {
+      // Map 1-10 mood score to 1-5 database relation for feelings
+      const moodScoreRelation = Math.ceil(moodScore / 2);
       const feelingLookup = await query(
         `SELECT id, name FROM feelings WHERE name = ANY($1) AND mood_score_relation = $2`,
-        [feelings, moodScore]
+        [feelings, moodScoreRelation]
       );
 
       for (const row of feelingLookup.rows) {
@@ -99,3 +124,5 @@ export const createCheckin = async (req: AuthenticatedRequest, res: Response) =>
     res.status(500).json({ error: 'Internal server error' });
   }
 };
+
+
