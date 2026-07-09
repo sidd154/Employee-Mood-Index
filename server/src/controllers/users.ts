@@ -6,7 +6,7 @@ import { logAudit } from '../utils/audit';
 export const getAllUsers = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const usersRes = await query(
-      `SELECT u.id, u.email, u.full_name as name, r.name as role, d.name as department, u.designation, u.created_at
+      `SELECT u.id, u.email, u.full_name as name, r.name as role, d.name as department, u.created_at
        FROM users u
        JOIN roles r ON u.role_id = r.id
        LEFT JOIN departments d ON u.department_id = d.id
@@ -179,7 +179,6 @@ export const importUsers = async (req: AuthenticatedRequest, res: Response) => {
     for (const u of users) {
       const emailLower = u.email ? u.email.toLowerCase().trim() : '';
       const fullName = u.name ? u.name.trim() : '';
-      const designation = u.designation ? u.designation.trim() : null;
       const deptName = u.department ? u.department.trim() : '';
 
       if (!emailLower || !emailLower.includes('@')) {
@@ -207,23 +206,22 @@ export const importUsers = async (req: AuthenticatedRequest, res: Response) => {
       }
 
       if (existing.rows.length > 0) {
-        // Update existing user details (name, department, designation)
+        // Update existing user details (name, department)
         await query(
           `UPDATE users 
            SET full_name = COALESCE(NULLIF($1, ''), full_name),
                department_id = COALESCE($2, department_id),
-               designation = COALESCE($3, designation),
                updated_at = NOW()
-           WHERE LOWER(email) = $4`,
-          [fullName, deptId, designation, emailLower]
+           WHERE LOWER(email) = $3`,
+          [fullName, deptId, emailLower]
         );
         importedCount++;
       } else {
         // Insert new user
         await query(
-          `INSERT INTO users (email, role_id, full_name, department_id, designation)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [emailLower, employeeRoleId, fullName || null, deptId, designation]
+          `INSERT INTO users (email, role_id, full_name, department_id)
+           VALUES ($1, $2, $3, $4)`,
+          [emailLower, employeeRoleId, fullName || null, deptId]
         );
         importedCount++;
       }

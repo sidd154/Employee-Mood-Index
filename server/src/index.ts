@@ -102,9 +102,6 @@ async function initializeDatabase() {
     await query('ALTER TABLE mood_entries ADD CONSTRAINT mood_entries_mood_score_check CHECK (mood_score BETWEEN 1 AND 10)');
 
     // Ensure 'Clients' contributor option exists in database
-    // Ensure designation column exists on users table
-    console.log('Ensuring designation column exists on users table...');
-    await query('ALTER TABLE users ADD COLUMN IF NOT EXISTS designation VARCHAR(255)');
 
     const clientsCheck = await query("SELECT 1 FROM contributors WHERE name = 'Clients'");
     if (clientsCheck.rows.length === 0) {

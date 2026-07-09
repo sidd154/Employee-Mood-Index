@@ -261,11 +261,10 @@ export const AdminDashboard: React.FC = () => {
         const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
         const nameIdx = headers.indexOf('name');
         const mailIdx = headers.indexOf('mail');
-        const designationIdx = headers.indexOf('designation');
         const deptIdx = headers.indexOf('dept');
 
         if (nameIdx === -1 || mailIdx === -1 || deptIdx === -1) {
-          throw new Error('CSV must contain name, mail, and dept columns (designation is optional)');
+          throw new Error('CSV must contain name, mail, and dept columns');
         }
 
         const parsedUsers = [];
@@ -274,7 +273,6 @@ export const AdminDashboard: React.FC = () => {
           
           const name = row[nameIdx]?.trim();
           const email = row[mailIdx]?.trim();
-          const designation = designationIdx !== -1 ? row[designationIdx]?.trim() : '';
           const department = row[deptIdx]?.trim();
 
           if (!email) continue;
@@ -282,7 +280,6 @@ export const AdminDashboard: React.FC = () => {
           parsedUsers.push({
             name: name || '',
             email: email,
-            designation: designation || '',
             department: department || ''
           });
         }
@@ -1145,7 +1142,6 @@ export const AdminDashboard: React.FC = () => {
                         <tr>
                           <th className="p-4">Name</th>
                           <th className="p-4">Email</th>
-                          <th className="p-4">Designation</th>
                           <th className="p-4">Department</th>
                           <th className="p-4">Role</th>
                           <th className="p-4 text-right">Actions</th>
@@ -1156,7 +1152,6 @@ export const AdminDashboard: React.FC = () => {
                           <tr key={usr.id} className="hover:bg-slate-900/20">
                             <td className="p-4 font-bold text-white">{usr.name || '—'}</td>
                             <td className="p-4 text-slate-400">{usr.email}</td>
-                            <td className="p-4 text-slate-400">{usr.designation || '—'}</td>
                             <td className="p-4 text-slate-400">{usr.department || '—'}</td>
                             <td className="p-4">
                               <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
@@ -1745,12 +1740,12 @@ export const AdminDashboard: React.FC = () => {
             <div className="bg-slate-950 p-4 rounded-xl border border-slate-900 space-y-2 text-xs">
               <span className="font-bold text-blue-400 uppercase tracking-wider text-[10px]">Expected CSV Format:</span>
               <p className="text-slate-300 font-mono leading-relaxed">
-                name,mail,designation,dept<br />
-                John Doe,john@company.com,Software Engineer,Engineering<br />
-                Jane Smith,jane@company.com,Sales Manager,Sales
+                name,mail,dept<br />
+                John Doe,john@company.com,Engineering<br />
+                Jane Smith,jane@company.com,Sales
               </p>
               <div className="text-[10px] text-slate-500 pt-1 leading-relaxed">
-                <strong>Note:</strong> If the department specified in the CSV does not exist in the database, it will be automatically created. Users with matching department names are grouped together. Designation is optional. Existing users will have their details updated.
+                <strong>Note:</strong> If the department specified in the CSV does not exist in the database, it will be automatically created. Users with matching department names are grouped together. Existing users will have their details updated.
               </div>
             </div>
 
@@ -1781,7 +1776,6 @@ export const AdminDashboard: React.FC = () => {
                       <tr>
                         <th className="p-3">Name</th>
                         <th className="p-3">Email</th>
-                        <th className="p-3">Designation</th>
                         <th className="p-3">Department</th>
                       </tr>
                     </thead>
@@ -1790,7 +1784,6 @@ export const AdminDashboard: React.FC = () => {
                         <tr key={idx} className="hover:bg-slate-900/10">
                           <td className="p-3 font-bold text-white">{row.name || '—'}</td>
                           <td className="p-3 text-slate-400">{row.email}</td>
-                          <td className="p-3 text-slate-400">{row.designation || '—'}</td>
                           <td className="p-3 text-slate-400">{row.department || '—'}</td>
                         </tr>
                       ))}
