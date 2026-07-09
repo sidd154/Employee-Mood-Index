@@ -134,15 +134,6 @@ async function initializeDatabase() {
       `);
     }
 
-    // Ensure standard domains are allowed only if table is empty
-    const domainsCheck = await query('SELECT count(*) as count FROM allowed_domains');
-    if (parseInt(domainsCheck.rows[0].count) === 0) {
-      console.log('Seeding default allowed domains...');
-      for (const d of ['company.com', 'localhost', 'gmail.com', 'pixel-studios.com', 'pixelavatar.com', 'pixelsoft.in']) {
-        await query('INSERT INTO allowed_domains (domain) VALUES ($1)', [d]);
-      }
-    }
-
     const feelingsCheck = await query('SELECT count(*) as count FROM feelings');
     if (parseInt(feelingsCheck.rows[0].count) === 0) {
       await query(`
