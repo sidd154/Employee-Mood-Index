@@ -21,6 +21,7 @@ export const getSettings = async (req: AuthenticatedRequest, res: Response) => {
         afternoonReminderTime: config['afternoon_reminder_time'] || '16:00',
         companyLogoUrl: config['company_logo_url'] || '',
         emailConfiguration: config['email_configuration'] ? JSON.parse(config['email_configuration']) : { from: 'onboarding@resend.dev' },
+        extendDataEntry: config['extend_data_entry'] === 'true',
       },
       allowedDomains: domainsRes.rows,
     });
@@ -33,7 +34,7 @@ export const getSettings = async (req: AuthenticatedRequest, res: Response) => {
 export const updateSettings = async (req: AuthenticatedRequest, res: Response) => {
   if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { companyName, reminderTime, afternoonReminderTime, companyLogoUrl, emailConfiguration } = req.body;
+  const { companyName, reminderTime, afternoonReminderTime, companyLogoUrl, emailConfiguration, extendDataEntry } = req.body;
 
   try {
     await query('BEGIN');
@@ -84,6 +85,15 @@ export const updateSettings = async (req: AuthenticatedRequest, res: Response) =
          VALUES ('email_configuration', $1, NOW()) 
          ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
         [JSON.stringify(emailConfiguration)]
+      );
+    }
+
+    if (extendDataEntry !== undefined) {
+      await query(
+        `INSERT INTO settings (key, value, updated_at) 
+         VALUES ('extend_data_entry', $1, NOW()) 
+         ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
+        [extendDataEntry ? 'true' : 'false']
       );
     }
 

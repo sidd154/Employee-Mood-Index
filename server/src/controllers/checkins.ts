@@ -3,20 +3,51 @@ import { AuthenticatedRequest } from '../middleware/auth';
 import { query } from '../config/db';
 import { logAudit } from '../utils/audit';
 
+function getCurrentCheckinWindowStart(today: Date = new Date()): Date {
+  const dayOfWeek = today.getDay(); // 0 = Sun, 1 = Mon, ..., 5 = Fri, 6 = Sat
+  const start = new Date(today);
+  start.setHours(0, 0, 0, 0);
+  
+  if (dayOfWeek === 5) { // Friday
+    return start;
+  } else if (dayOfWeek === 6) { // Saturday
+    start.setDate(start.getDate() - 1);
+    return start;
+  } else if (dayOfWeek === 0) { // Sunday
+    start.setDate(start.getDate() - 2);
+    return start;
+  } else {
+    // Monday to Thursday (1 to 4): subtract (dayOfWeek + 2) days to go back to previous Friday
+    const daysToSubtract = dayOfWeek + 2;
+    start.setDate(start.getDate() - daysToSubtract);
+    return start;
+  }
+}
+
 export const getTodayStatus = async (req: AuthenticatedRequest, res: Response) => {
   if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
 
   try {
     const today = new Date();
     const dayOfWeek = today.getDay(); // 0 = Sunday, 1-4 = Mon-Thu, 5-6 = Fri-Sat
-    const isBlockedDay = dayOfWeek >= 1 && dayOfWeek <= 4;
+    let isBlockedDay = dayOfWeek >= 1 && dayOfWeek <= 4;
+
+    if (isBlockedDay) {
+      const extendRes = await query("SELECT value FROM settings WHERE key = 'extend_data_entry'");
+      const isExtended = extendRes.rows.length > 0 && extendRes.rows[0].value === 'true';
+      if (isExtended) {
+        isBlockedDay = false;
+      }
+    }
+
+    const windowStart = getCurrentCheckinWindowStart(today);
 
     const checkinRes = await query(
       `SELECT id, mood_score, journal_text, created_at 
        FROM mood_entries 
-       WHERE user_id = $1 AND created_at >= DATE_TRUNC('week', NOW())
+       WHERE user_id = $1 AND created_at >= $2
        ORDER BY created_at DESC LIMIT 1`,
-      [req.user.id]
+      [req.user.id, windowStart]
     );
 
     const completed = checkinRes.rows.length > 0;
@@ -47,7 +78,15 @@ export const createCheckin = async (req: AuthenticatedRequest, res: Response) =>
 
   const today = new Date();
   const dayOfWeek = today.getDay(); // 0 = Sunday, 1-4 = Mon-Thu, 5-6 = Fri-Sat
-  const isBlockedDay = dayOfWeek >= 1 && dayOfWeek <= 4;
+  let isBlockedDay = dayOfWeek >= 1 && dayOfWeek <= 4;
+
+  if (isBlockedDay) {
+    const extendRes = await query("SELECT value FROM settings WHERE key = 'extend_data_entry'");
+    const isExtended = extendRes.rows.length > 0 && extendRes.rows[0].value === 'true';
+    if (isExtended) {
+      isBlockedDay = false;
+    }
+  }
 
   if (isBlockedDay) {
     return res.status(400).json({ error: 'Check-ins are only allowed Friday through Sunday.' });
@@ -60,10 +99,11 @@ export const createCheckin = async (req: AuthenticatedRequest, res: Response) =>
   }
 
   try {
+    const windowStart = getCurrentCheckinWindowStart(today);
     const checkinRes = await query(
       `SELECT 1 FROM mood_entries 
-       WHERE user_id = $1 AND created_at >= DATE_TRUNC('week', NOW())`,
-      [req.user.id]
+       WHERE user_id = $1 AND created_at >= $2`,
+      [req.user.id, windowStart]
     );
 
     if (checkinRes.rows.length > 0) {

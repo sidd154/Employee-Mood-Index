@@ -39,7 +39,7 @@ export const AdminDashboard: React.FC = () => {
   const [empDetails, setEmpDetails] = useState<any | null>(null);
 
   // Settings & Domains
-  const [settings, setSettings] = useState({ companyName: '', reminderTime: '', afternoonReminderTime: '', companyLogoUrl: '', emailConfiguration: { from: '' } });
+  const [settings, setSettings] = useState({ companyName: '', reminderTime: '', afternoonReminderTime: '', companyLogoUrl: '', emailConfiguration: { from: '' }, extendDataEntry: false });
   const [domains, setDomains] = useState<any[]>([]);
   const [newDomain, setNewDomain] = useState('');
   const [savingSettings, setSavingSettings] = useState(false);
@@ -1109,7 +1109,7 @@ export const AdminDashboard: React.FC = () => {
 
                         <div>
                           <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                            Email Sender Address (Resend)
+                            Email Sender Address (SMTP)
                           </label>
                           <input
                             type="text"
@@ -1117,6 +1117,19 @@ export const AdminDashboard: React.FC = () => {
                             onChange={(e) => setSettings(prev => ({ ...prev, emailConfiguration: { from: e.target.value } }))}
                             className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white"
                           />
+                        </div>
+
+                        <div className="flex items-center gap-3 py-2">
+                          <input
+                            type="checkbox"
+                            id="extendDataEntry"
+                            checked={settings.extendDataEntry}
+                            onChange={(e) => setSettings(prev => ({ ...prev, extendDataEntry: e.target.checked }))}
+                            className="w-4 h-4 rounded bg-slate-950 border border-slate-850 text-blue-600 focus:ring-0 focus:ring-offset-0 cursor-pointer"
+                          />
+                          <label htmlFor="extendDataEntry" className="text-xs font-semibold text-slate-300 cursor-pointer select-none">
+                            Extend data entry window (Monday through Thursday)
+                          </label>
                         </div>
 
                         <button
