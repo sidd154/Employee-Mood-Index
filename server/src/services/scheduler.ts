@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { query } from '../config/db';
 import { sendEmail } from './email';
 import { buildAndEmailAdminReport } from '../controllers/reports';
+import { getCurrentCheckinWindowStart } from '../controllers/checkins';
 
 const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
 
@@ -31,7 +32,7 @@ export const sendMorningReminders = async () => {
             <div style="text-align: center; margin: 30px 0;">
               <a href="${frontendUrl}" style="background-color: #2563eb; color: #ffffff; padding: 12px 24px; border-radius: 6px; font-weight: bold; text-decoration: none; display: inline-block;">Complete Weekly Check-In</a>
             </div>
-            <p style="color: #94a3b8; font-size: 13px;">You are receiving this because you are registered on the Employee Mood Index.</p>
+            <p style="color: #94a3b8; font-size: 13px;">You are receiving this because you are registered on the Employee Wellness Index.</p>
           </div>
         `,
         emailType: 'Reminder_9AM',
@@ -47,13 +48,15 @@ export const sendMorningReminders = async () => {
 export const sendAfternoonReminders = async () => {
   console.log('Running 4:00 PM Weekday Incomplete Check-in Reminder Cron Job...');
   try {
+    const windowStart = getCurrentCheckinWindowStart();
     const incompleteEmployees = await query(
       `SELECT u.email, u.full_name FROM users u
        JOIN roles r ON u.role_id = r.id
        WHERE r.name = 'employee' AND u.full_name IS NOT NULL
        AND u.id NOT IN (
-         SELECT user_id FROM mood_entries WHERE created_at >= DATE_TRUNC('week', NOW())
-       )`
+         SELECT user_id FROM mood_entries WHERE created_at >= $1
+       )`,
+      [windowStart]
     );
 
     for (const emp of incompleteEmployees.rows) {

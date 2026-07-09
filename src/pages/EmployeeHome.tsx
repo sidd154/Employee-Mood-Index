@@ -310,7 +310,7 @@ export const EmployeeHome: React.FC = () => {
   const [screen, setScreen] = useState<1 | 2 | 3 | 5>(1);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [branding, setBranding] = useState({ companyName: 'Mood Index', logoUrl: '' });
+  const [branding, setBranding] = useState({ companyName: 'Wellness Index', logoUrl: '' });
   
   // Block state
   const [isBlocked, setIsBlocked] = useState(false);
@@ -361,7 +361,7 @@ export const EmployeeHome: React.FC = () => {
           const sData = await settingsRes.json();
           if (sData.settings) {
             setBranding({
-              companyName: sData.settings.companyName || 'Mood Index',
+              companyName: sData.settings.companyName || 'Wellness Index',
               logoUrl: sData.settings.companyLogoUrl || '',
             });
           }
@@ -773,7 +773,7 @@ export const EmployeeHome: React.FC = () => {
                       {alreadyCheckedIn ? "You've already checked in this week." : "Thank you for checking in this week."}
                     </h2>
                     <p className="text-slate-400 text-xs max-w-xs mx-auto mb-6">
-                      Your check-in helps management track wellbeing trends and make your workplace better.
+                      Your check-in helps in making your workplace better
                     </p>
 
                     {/* Quote Card for this week's check-in */}
@@ -811,7 +811,7 @@ export const EmployeeHome: React.FC = () => {
 
       {/* Footer Branding */}
       <footer className="w-full text-center text-slate-500 text-[10px] mt-6 z-10">
-        Employee Mood Index © 2026. Made with care for your workplace.
+        Employee Wellness Index © 2026. Made with care for your workplace.
       </footer>
 
       {/* Send Report Modal */}

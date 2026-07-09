@@ -52,6 +52,10 @@ export const AdminDashboard: React.FC = () => {
   const [regFullName, setRegFullName] = useState('');
   const [regDeptId, setRegDeptId] = useState('');
   const [regSubmitting, setRegSubmitting] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [csvPreview, setCsvPreview] = useState<any[]>([]);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
 
   // Detailed Modal for Mood Click
   const [selectedMoodScore, setSelectedMoodScore] = useState<number | null>(null);
@@ -214,6 +218,118 @@ export const AdminDashboard: React.FC = () => {
       alert('Connection error');
     } finally {
       setRegSubmitting(false);
+    }
+  };
+
+  const parseCSVLine = (line: string): string[] => {
+    const result = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"') {
+        inQuotes = !inQuotes;
+      } else if (char === ',' && !inQuotes) {
+        result.push(current);
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    result.push(current);
+    return result;
+  };
+
+  const handleCSVFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setImportError(null);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target?.result as string;
+        if (!text) {
+          throw new Error('File is empty');
+        }
+
+        const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
+        if (lines.length < 2) {
+          throw new Error('CSV must contain a header row and at least one data row');
+        }
+
+        const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+        const nameIdx = headers.indexOf('name');
+        const mailIdx = headers.indexOf('mail');
+        const designationIdx = headers.indexOf('designation');
+        const deptIdx = headers.indexOf('dept');
+
+        if (nameIdx === -1 || mailIdx === -1 || deptIdx === -1) {
+          throw new Error('CSV must contain name, mail, and dept columns (designation is optional)');
+        }
+
+        const parsedUsers = [];
+        for (let i = 1; i < lines.length; i++) {
+          const row = parseCSVLine(lines[i]);
+          
+          const name = row[nameIdx]?.trim();
+          const email = row[mailIdx]?.trim();
+          const designation = designationIdx !== -1 ? row[designationIdx]?.trim() : '';
+          const department = row[deptIdx]?.trim();
+
+          if (!email) continue;
+
+          parsedUsers.push({
+            name: name || '',
+            email: email,
+            designation: designation || '',
+            department: department || ''
+          });
+        }
+
+        if (parsedUsers.length === 0) {
+          throw new Error('No valid users found in CSV');
+        }
+
+        setCsvPreview(parsedUsers);
+      } catch (err: any) {
+        setImportError(err.message || 'Failed to parse CSV file');
+        setCsvPreview([]);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleConfirmImport = async () => {
+    if (csvPreview.length === 0 || !accessToken) return;
+
+    setImporting(true);
+    setImportError(null);
+    try {
+      const res = await fetch(`${API_URL}/users/import`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ users: csvPreview }),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        alert(data.message || 'Users imported successfully');
+        setShowImportModal(false);
+        setCsvPreview([]);
+        fetchData();
+        fetchUsers();
+      } else {
+        setImportError(data.error || 'Failed to import users');
+      }
+    } catch (err: any) {
+      console.error(err);
+      setImportError('Internal server error');
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -462,7 +578,7 @@ export const AdminDashboard: React.FC = () => {
             </div>
           )}
           <div>
-            <h1 className="font-bold text-base tracking-wide text-white">{settings.companyName || 'Employee Mood Index'}</h1>
+            <h1 className="font-bold text-base tracking-wide text-white">{settings.companyName || 'Employee Wellness Index'}</h1>
             <p className="text-[10px] text-stone-500 uppercase tracking-wider font-semibold">Management Console</p>
           </div>
         </div>
@@ -568,7 +684,7 @@ export const AdminDashboard: React.FC = () => {
                   {/* KPI Cards Grid */}
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                     <div className="glass p-6 rounded-2xl border border-stone-850 hover:border-stone-700 transition-all cursor-pointer">
-                      <p className="text-xs font-bold text-stone-400 uppercase tracking-wider">Overall Mood Index</p>
+                      <p className="text-xs font-bold text-stone-400 uppercase tracking-wider">Overall Wellness Index</p>
                       <h3 className="text-4xl font-extrabold text-blue-500 mt-3">{stats.moodIndex}</h3>
                       <p className="text-[10px] text-stone-500 mt-1">Wellbeing Index (Target &gt; 7.5)</p>
                     </div>
@@ -596,8 +712,8 @@ export const AdminDashboard: React.FC = () => {
                     <div className="glass p-6 rounded-2xl border border-stone-850 md:col-span-2">
                       <div className="flex justify-between items-center mb-6">
                         <div>
-                          <h4 className="text-sm font-bold text-white">Mood Index Trend</h4>
-                          <p className="text-[10px] text-stone-500">Average employee mood plotted over time</p>
+                          <h4 className="text-sm font-bold text-white">Wellness Index Trend</h4>
+                          <p className="text-[10px] text-stone-500">Average employee wellness plotted over time</p>
                         </div>
                         <div className="flex bg-stone-950 p-1 rounded-lg border border-stone-800">
                           <button
@@ -667,7 +783,7 @@ export const AdminDashboard: React.FC = () => {
 
                     {/* Mood Distribution */}
                     <div className="glass p-6 rounded-2xl border border-stone-850">
-                      <h4 className="text-sm font-bold text-white mb-2">Mood Distribution</h4>
+                      <h4 className="text-sm font-bold text-white mb-2">Wellness Distribution</h4>
                       <p className="text-[10px] text-stone-500 mb-6">Click on a category to filter breakdowns</p>
                       
                       <div className="h-64">
@@ -703,7 +819,7 @@ export const AdminDashboard: React.FC = () => {
                             <tr>
                               <th className="p-3">Feeling</th>
                               <th className="p-3 text-center">Frequency</th>
-                              <th className="p-3 text-right">Mood Correlation</th>
+                              <th className="p-3 text-right">Wellness Correlation</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-stone-800 text-stone-300">
@@ -736,7 +852,7 @@ export const AdminDashboard: React.FC = () => {
                             <tr>
                               <th className="p-3">Impact Factor</th>
                               <th className="p-3 text-center">Frequency</th>
-                              <th className="p-3 text-right">Mood Correlation</th>
+                              <th className="p-3 text-right">Wellness Correlation</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-stone-800 text-stone-300">
@@ -785,7 +901,7 @@ export const AdminDashboard: React.FC = () => {
                         </div>
                         <div className="space-y-3">
                           <div className="flex justify-between text-xs">
-                            <span className="text-slate-400">Mood Index:</span>
+                            <span className="text-slate-400">Wellness Index:</span>
                             <span className="font-bold text-blue-500">{dept.moodIndex}</span>
                           </div>
                           <div className="flex justify-between text-xs">
@@ -839,7 +955,7 @@ export const AdminDashboard: React.FC = () => {
                           <tr>
                             <th className="p-4">Name</th>
                             <th className="p-4">Department</th>
-                            <th className="p-4 text-center">Mood Index</th>
+                            <th className="p-4 text-center">Wellness Index</th>
                             <th className="p-4 text-center">Participation %</th>
                             <th className="p-4 text-right">Last Check-In</th>
                           </tr>
@@ -959,7 +1075,23 @@ export const AdminDashboard: React.FC = () => {
 
                   {/* Register User Form */}
                   <div className="glass p-6 rounded-2xl border border-stone-850">
-                    <h3 className="font-bold text-white mb-4 text-xs uppercase tracking-wider">Register New User / Email</h3>
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="font-bold text-white text-xs uppercase tracking-wider">Register New User / Email</h3>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowImportModal(true);
+                          setCsvPreview([]);
+                          setImportError(null);
+                        }}
+                        className="bg-green-600 hover:bg-green-500 text-white font-semibold py-1.5 px-3 rounded-lg text-xs transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 9 9M12 3v13.5" />
+                        </svg>
+                        Import Users via CSV
+                      </button>
+                    </div>
                     <form onSubmit={handleRegisterUser} className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
                       <div>
                         <label className="block text-slate-400 text-[10px] uppercase font-bold tracking-wider mb-2">Email Address</label>
@@ -1013,6 +1145,7 @@ export const AdminDashboard: React.FC = () => {
                         <tr>
                           <th className="p-4">Name</th>
                           <th className="p-4">Email</th>
+                          <th className="p-4">Designation</th>
                           <th className="p-4">Department</th>
                           <th className="p-4">Role</th>
                           <th className="p-4 text-right">Actions</th>
@@ -1023,6 +1156,7 @@ export const AdminDashboard: React.FC = () => {
                           <tr key={usr.id} className="hover:bg-slate-900/20">
                             <td className="p-4 font-bold text-white">{usr.name || '—'}</td>
                             <td className="p-4 text-slate-400">{usr.email}</td>
+                            <td className="p-4 text-slate-400">{usr.designation || '—'}</td>
                             <td className="p-4 text-slate-400">{usr.department || '—'}</td>
                             <td className="p-4">
                               <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
@@ -1294,7 +1428,7 @@ export const AdminDashboard: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Mood distribution */}
                   <div className="bg-slate-900/50 border border-slate-900 p-4 rounded-xl">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">Mood Distribution</h4>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">Wellness Distribution</h4>
                     <div className="h-48">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={deptDetails.distribution || []}>
@@ -1393,7 +1527,7 @@ export const AdminDashboard: React.FC = () => {
                         <tr>
                           <th className="p-4">Name</th>
                           <th className="p-4">Email</th>
-                          <th className="p-4 text-center">Mood Index</th>
+                          <th className="p-4 text-center">Wellness Index</th>
                           <th className="p-4 text-right">Last Check-In</th>
                         </tr>
                       </thead>
@@ -1459,7 +1593,7 @@ export const AdminDashboard: React.FC = () => {
                   <div className="space-y-4">
                     {/* Average Mood Index Card */}
                     <div className="bg-stone-950/50 border border-stone-850 p-4 rounded-xl text-center">
-                      <h4 className="text-[10px] font-bold uppercase tracking-wider text-stone-500 mb-1">Employee Mood Index</h4>
+                      <h4 className="text-[10px] font-bold uppercase tracking-wider text-stone-500 mb-1">Employee Wellness Index</h4>
                       <p className="text-3xl font-extrabold text-blue-500">
                         {empDetails.trends && empDetails.trends.length > 0
                           ? (empDetails.trends.reduce((sum: number, t: any) => sum + parseFloat(t.score), 0) / empDetails.trends.length).toFixed(1)
@@ -1586,6 +1720,107 @@ export const AdminDashboard: React.FC = () => {
                     ))}
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4. CSV Import Modal */}
+      {showImportModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-sm p-4 flex justify-center items-start">
+          <div className="my-8 w-full max-w-2xl bg-stone-900 border border-stone-800 rounded-2xl p-6 shadow-2xl space-y-6 relative animate-fade-in text-left">
+            <button
+              onClick={() => { setShowImportModal(false); setCsvPreview([]); setImportError(null); }}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white cursor-pointer"
+            >
+              ✕
+            </button>
+            <div>
+              <h3 className="text-lg font-bold text-white mb-1">Import Users via CSV</h3>
+              <p className="text-xs text-slate-400">
+                Batch register and update employee accounts with a CSV file.
+              </p>
+            </div>
+
+            <div className="bg-slate-950 p-4 rounded-xl border border-slate-900 space-y-2 text-xs">
+              <span className="font-bold text-blue-400 uppercase tracking-wider text-[10px]">Expected CSV Format:</span>
+              <p className="text-slate-300 font-mono leading-relaxed">
+                name,mail,designation,dept<br />
+                John Doe,john@company.com,Software Engineer,Engineering<br />
+                Jane Smith,jane@company.com,Sales Manager,Sales
+              </p>
+              <div className="text-[10px] text-slate-500 pt-1 leading-relaxed">
+                <strong>Note:</strong> If the department specified in the CSV does not exist in the database, it will be automatically created. Users with matching department names are grouped together. Designation is optional. Existing users will have their details updated.
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-slate-400 text-[10px] uppercase font-bold tracking-wider">Select CSV File</label>
+              <input
+                type="file"
+                accept=".csv"
+                onChange={handleCSVFileChange}
+                className="w-full bg-slate-950 border border-slate-900 rounded-xl px-4 py-2 text-xs text-white file:mr-4 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-600 file:text-white file:cursor-pointer hover:file:bg-blue-500"
+              />
+            </div>
+
+            {importError && (
+              <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs">
+                {importError}
+              </div>
+            )}
+
+            {csvPreview.length > 0 && (
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Parsed Users Preview ({csvPreview.length})</h4>
+                </div>
+                <div className="border border-slate-900 rounded-xl overflow-hidden max-h-60 overflow-y-auto">
+                  <table className="w-full text-left text-[11px]">
+                    <thead className="bg-slate-950 text-slate-400 font-semibold uppercase tracking-wider">
+                      <tr>
+                        <th className="p-3">Name</th>
+                        <th className="p-3">Email</th>
+                        <th className="p-3">Designation</th>
+                        <th className="p-3">Department</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-900 text-slate-300 bg-slate-950/20">
+                      {csvPreview.slice(0, 50).map((row, idx) => (
+                        <tr key={idx} className="hover:bg-slate-900/10">
+                          <td className="p-3 font-bold text-white">{row.name || '—'}</td>
+                          <td className="p-3 text-slate-400">{row.email}</td>
+                          <td className="p-3 text-slate-400">{row.designation || '—'}</td>
+                          <td className="p-3 text-slate-400">{row.department || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {csvPreview.length > 50 && (
+                    <div className="p-2.5 bg-slate-950 text-center text-slate-500 text-[10px] border-t border-slate-900 font-semibold">
+                      Showing first 50 rows. The remaining {csvPreview.length - 50} rows will also be imported.
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => { setShowImportModal(false); setCsvPreview([]); setImportError(null); }}
+                className="flex-1 border border-slate-800 hover:bg-slate-900 text-slate-300 font-semibold py-2.5 rounded-xl text-xs transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={csvPreview.length === 0 || importing}
+                onClick={handleConfirmImport}
+                className="flex-1 bg-green-600 hover:bg-green-500 disabled:bg-green-800 text-white font-semibold py-2.5 rounded-xl text-xs transition-all shadow-md cursor-pointer"
+              >
+                {importing ? 'Importing...' : 'Confirm Import'}
+              </button>
             </div>
           </div>
         </div>

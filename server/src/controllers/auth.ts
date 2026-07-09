@@ -49,10 +49,10 @@ export const sendOTP = async (req: Request, res: Response) => {
 
     const emailSent = await sendEmail({
       to: emailLower,
-      subject: 'Your Employee Mood Index Login Code',
+      subject: 'Your Employee Wellness Index Login Code',
       html: `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
-          <h2 style="color: #0f172a; margin-bottom: 16px;">Employee Mood Index</h2>
+          <h2 style="color: #0f172a; margin-bottom: 16px;">Employee Wellness Index</h2>
           <p style="color: #475569; font-size: 16px; line-height: 24px;">Your 6-digit one-time code to access your account is:</p>
           <div style="background-color: #f1f5f9; padding: 16px; text-align: center; font-size: 32px; font-weight: bold; letter-spacing: 4px; color: #1e293b; border-radius: 6px; margin: 24px 0;">
             ${code}

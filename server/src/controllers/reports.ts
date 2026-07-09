@@ -160,14 +160,14 @@ export const requestEmployeeReport = async (req: AuthenticatedRequest, res: Resp
           <p>Hi ${employeeName},</p>
           <p>Your requested wellbeing report for the period <strong>${rangeLabel}</strong> is ready. Please find the PDF attached to this email.</p>
           <br/>
-          <p style="color: #64748b; font-size: 13px;">Employee Mood Index team</p>
+          <p style="color: #64748b; font-size: 13px;">Employee Wellness Index team</p>
         </div>
       `,
       emailType: 'Report',
       attachments: [
         {
           content: pdfBuffer,
-          filename: `Employee_Mood_Report_${range}.pdf`,
+          filename: `Employee_Wellness_Report_${range}.pdf`,
         },
       ],
     });
@@ -321,7 +321,7 @@ export const buildAndEmailAdminReport = async (userId: string, userEmail: string
   let filename = '';
 
   if (exportType === 'pdf') {
-    filename = `Admin_Mood_Report_${range}.pdf`;
+    filename = `Admin_Wellness_Report_${range}.pdf`;
 
     reportBuffer = await generateAdminReportPDF(rangeLabel, {
       moodIndex,
@@ -352,11 +352,11 @@ export const buildAndEmailAdminReport = async (userId: string, userEmail: string
       })),
     });
   } else {
-    filename = `Admin_Mood_Report_${range}.csv`;
+    filename = `Admin_Wellness_Report_${range}.csv`;
 
-    let csvText = `Employee Mood Index Admin Report\nPeriod,${rangeLabel}\nOverall Mood Index,${moodIndex}\nTotal Checkins,${checkinsCount}\n\n`;
+    let csvText = `Employee Wellness Index Admin Report\nPeriod,${rangeLabel}\nOverall Wellness Index,${moodIndex}\nTotal Checkins,${checkinsCount}\n\n`;
     
-    csvText += `Mood Distribution\nMood,Count\n`;
+    csvText += `Wellness Distribution\nWellness Score,Count\n`;
     distribution.forEach((d) => {
       csvText += `${d.name},${d.count}\n`;
     });
@@ -366,12 +366,12 @@ export const buildAndEmailAdminReport = async (userId: string, userEmail: string
       csvText += `${d.name},${d.this_month_avg || '—'},${d.last_month_avg || '—'},${d.overall_avg || '—'},${d.headcount || 0}\n`;
     });
 
-    csvText += `\nTop Feelings\nFeeling,Count,Mood Correlation\n`;
+    csvText += `\nTop Feelings\nFeeling,Count,Wellness Correlation\n`;
     feelRes.rows.forEach((f) => {
       csvText += `${f.name},${f.count},${f.avg_mood}\n`;
     });
 
-    csvText += `\nTop Contributors\nContributor,Count,Mood Correlation\n`;
+    csvText += `\nTop Contributors\nContributor,Count,Wellness Correlation\n`;
     contRes.rows.forEach((c) => {
       csvText += `${c.name},${c.count},${c.avg_mood}\n`;
     });
@@ -388,7 +388,7 @@ export const buildAndEmailAdminReport = async (userId: string, userEmail: string
         <p>Hi Admin,</p>
         <p>The requested analytics report for the period <strong>${rangeLabel}</strong> is ready. Please find the exported <strong>${exportType.toUpperCase()}</strong> file attached to this email.</p>
         <br/>
-        <p style="color: #64748b; font-size: 13px;">Employee Mood Index Team</p>
+        <p style="color: #64748b; font-size: 13px;">Employee Wellness Index Team</p>
       </div>
     `,
     emailType: 'Report',

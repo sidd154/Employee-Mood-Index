@@ -3,7 +3,7 @@ import { AuthenticatedRequest } from '../middleware/auth';
 import { query } from '../config/db';
 import { logAudit } from '../utils/audit';
 
-function getCurrentCheckinWindowStart(today: Date = new Date()): Date {
+export function getCurrentCheckinWindowStart(today: Date = new Date()): Date {
   const dayOfWeek = today.getDay(); // 0 = Sun, 1 = Mon, ..., 5 = Fri, 6 = Sat
   const start = new Date(today);
   start.setHours(0, 0, 0, 0);

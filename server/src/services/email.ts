@@ -40,7 +40,7 @@ export const sendEmail = async (options: {
     }
 
     const mailOptions = {
-      from: `Employee Mood Index <${fromEmail}>`,
+      from: `Employee Wellness Index <${fromEmail}>`,
       to: options.to,
       subject: options.subject,
       html: options.html,
