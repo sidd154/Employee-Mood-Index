@@ -333,6 +333,12 @@ export const EmployeeHome: React.FC = () => {
   const [reportSuccess, setReportSuccess] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
 
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [profileName, setProfileName] = useState('');
+  const [profileDeptId, setProfileDeptId] = useState('');
+  const [deptsList, setDeptsList] = useState<any[]>([]);
+  const [savingProfile, setSavingProfile] = useState(false);
+
   useEffect(() => {
     const checkStatus = async () => {
       if (!accessToken) return;
@@ -365,6 +371,13 @@ export const EmployeeHome: React.FC = () => {
               logoUrl: sData.settings.companyLogoUrl || '',
             });
           }
+        }
+
+        const deptsRes = await fetch(`${API_URL}/settings/departments`, {
+          headers: { 'Authorization': `Bearer ${accessToken}` },
+        });
+        if (deptsRes.ok) {
+          setDeptsList(await deptsRes.json());
         }
       } catch (err) {
         console.error('Failed to fetch check-in status or settings:', err);
@@ -445,6 +458,40 @@ export const EmployeeHome: React.FC = () => {
     }
   };
 
+  const handleUpdateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!profileName.trim() || !accessToken) return;
+
+    setSavingProfile(true);
+    try {
+      const res = await fetch(`${API_URL}/users/profile`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          fullName: profileName.trim(),
+          departmentId: profileDeptId || null,
+        }),
+      });
+
+      if (res.ok) {
+        alert('Profile updated successfully!');
+        setShowProfileModal(false);
+        window.location.reload();
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Failed to update profile');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Network error');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
   const handleSendReport = async () => {
     if (!accessToken) return;
     setSendingReport(true);
@@ -509,12 +556,24 @@ export const EmployeeHome: React.FC = () => {
         <div className="flex items-center">
           <span className="font-bold text-sm tracking-wide">{branding.companyName}</span>
         </div>
-        <button
-          onClick={logout}
-          className="text-slate-400 hover:text-white text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-800 hover:bg-slate-900 transition-colors"
-        >
-          Sign Out
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              setShowProfileModal(true);
+              setProfileName(user?.fullName || '');
+              setProfileDeptId(user?.departmentId || '');
+            }}
+            className="text-slate-400 hover:text-white text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-800 hover:bg-slate-900 transition-colors cursor-pointer"
+          >
+            Edit Profile
+          </button>
+          <button
+            onClick={logout}
+            className="text-slate-400 hover:text-white text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-800 hover:bg-slate-900 transition-colors cursor-pointer"
+          >
+            Sign Out
+          </button>
+        </div>
       </header>
 
       {/* Main Container */}
@@ -868,6 +927,64 @@ export const EmployeeHome: React.FC = () => {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Profile Edit Modal */}
+      {showProfileModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 text-left">
+          <div className="w-full max-w-sm rounded-2xl glass p-6 shadow-2xl animate-fade-in space-y-4">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-900">
+              <h3 className="text-lg font-bold text-white">Edit Profile</h3>
+              <button
+                onClick={() => setShowProfileModal(false)}
+                className="text-slate-400 hover:text-white cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleUpdateProfile} className="space-y-4">
+              <div>
+                <label className="block text-slate-400 text-[10px] uppercase font-bold tracking-wider mb-2">Full Name</label>
+                <input
+                  type="text"
+                  required
+                  value={profileName}
+                  onChange={(e) => setProfileName(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-900 rounded-xl px-4 py-2.5 text-xs text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-400 text-[10px] uppercase font-bold tracking-wider mb-2">Department</label>
+                <select
+                  value={profileDeptId}
+                  onChange={(e) => setProfileDeptId(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-900 rounded-xl px-4 py-2.5 text-xs text-white cursor-pointer"
+                >
+                  <option value="">None (Select Department)</option>
+                  {deptsList.map((d) => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowProfileModal(false)}
+                  className="flex-1 border border-slate-800 hover:bg-slate-900 text-slate-300 font-semibold py-2.5 rounded-xl text-xs transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingProfile}
+                  className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 text-white font-semibold py-2.5 rounded-xl text-xs transition-all shadow-md cursor-pointer"
+                >
+                  {savingProfile ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

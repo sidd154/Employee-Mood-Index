@@ -246,3 +246,89 @@ export const importUsers = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
+export const updateOwnProfile = async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+  const { fullName, departmentId } = req.body;
+
+  if (!fullName || !fullName.trim()) {
+    return res.status(400).json({ error: 'Name is required' });
+  }
+
+  try {
+    let deptId = departmentId || null;
+    if (deptId) {
+      const deptRes = await query('SELECT 1 FROM departments WHERE id = $1', [deptId]);
+      if (deptRes.rows.length === 0) {
+        return res.status(400).json({ error: 'Invalid department' });
+      }
+    }
+
+    await query(
+      `UPDATE users 
+       SET full_name = $1, department_id = $2, updated_at = NOW() 
+       WHERE id = $3`,
+      [fullName.trim(), deptId, req.user.id]
+    );
+
+    await logAudit(req.user.id, 'profile_updated', {
+      updatedUserId: req.user.id,
+    });
+
+    res.json({ message: 'Profile updated successfully' });
+  } catch (error: any) {
+    console.error('Update own profile error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const adminUpdateUser = async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+  const { id } = req.params;
+  const { fullName, email, departmentId } = req.body;
+
+  if (!email || !email.trim()) {
+    return res.status(400).json({ error: 'Email is required' });
+  }
+
+  // Block modifications targeting the primary admin email
+  if (id === 'siddhanthsrinivasan@gmail.com' || email.toLowerCase() === 'siddhanthsrinivasan@gmail.com') {
+    const checkUser = await query('SELECT email FROM users WHERE id = $1', [id]);
+    if (checkUser.rows.length > 0 && checkUser.rows[0].email.toLowerCase() === 'siddhanthsrinivasan@gmail.com') {
+      return res.status(403).json({ error: 'Primary admin user cannot be modified.' });
+    }
+  }
+
+  try {
+    let deptId = departmentId || null;
+    if (deptId) {
+      const deptRes = await query('SELECT 1 FROM departments WHERE id = $1', [deptId]);
+      if (deptRes.rows.length === 0) {
+        return res.status(400).json({ error: 'Invalid department' });
+      }
+    }
+
+    // Check if email is already taken by another user
+    const emailCheck = await query('SELECT id FROM users WHERE LOWER(email) = $1 AND id != $2', [email.toLowerCase().trim(), id]);
+    if (emailCheck.rows.length > 0) {
+      return res.status(400).json({ error: 'Email address is already in use' });
+    }
+
+    await query(
+      `UPDATE users 
+       SET full_name = $1, email = $2, department_id = $3, updated_at = NOW() 
+       WHERE id = $4`,
+      [fullName ? fullName.trim() : null, email.toLowerCase().trim(), deptId, id]
+    );
+
+    await logAudit(req.user.id, 'user_updated_by_admin', {
+      updatedUserId: id,
+      updatedUserEmail: email,
+    });
+
+    res.json({ message: 'User updated successfully' });
+  } catch (error: any) {
+    console.error('Admin update user error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+

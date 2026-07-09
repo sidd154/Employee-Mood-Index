@@ -56,6 +56,13 @@ export const AdminDashboard: React.FC = () => {
   const [csvPreview, setCsvPreview] = useState<any[]>([]);
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  const [userSearch, setUserSearch] = useState('');
+  const [showEditUserModal, setShowEditUserModal] = useState(false);
+  const [editingUser, setEditingUser] = useState<any | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editDeptId, setEditDeptId] = useState('');
+  const [savingEditUser, setSavingEditUser] = useState(false);
 
   // Detailed Modal for Mood Click
   const [selectedMoodScore, setSelectedMoodScore] = useState<number | null>(null);
@@ -327,6 +334,42 @@ export const AdminDashboard: React.FC = () => {
       setImportError('Internal server error');
     } finally {
       setImporting(false);
+    }
+  };
+
+  const handleSaveEditUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingUser || !editEmail.trim() || !accessToken) return;
+
+    setSavingEditUser(true);
+    try {
+      const res = await fetch(`${API_URL}/users/${editingUser.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          fullName: editName.trim() || null,
+          email: editEmail.trim(),
+          departmentId: editDeptId || null,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        alert('User details updated successfully!');
+        setShowEditUserModal(false);
+        setEditingUser(null);
+        fetchUsers();
+      } else {
+        alert(data.error || 'Failed to update user');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Network error');
+    } finally {
+      setSavingEditUser(false);
     }
   };
 
@@ -1135,6 +1178,16 @@ export const AdminDashboard: React.FC = () => {
                       </div>
                     </form>
                   </div>
+                  {/* User Search Input */}
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Search users by name or email..."
+                      value={userSearch}
+                      onChange={(e) => setUserSearch(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
 
                   <div className="glass rounded-2xl border border-slate-900 overflow-hidden">
                     <table className="w-full text-left text-xs">
@@ -1148,39 +1201,59 @@ export const AdminDashboard: React.FC = () => {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-900 text-slate-300">
-                        {usersList.map((usr) => (
-                          <tr key={usr.id} className="hover:bg-slate-900/20">
-                            <td className="p-4 font-bold text-white">{usr.name || '—'}</td>
-                            <td className="p-4 text-slate-400">{usr.email}</td>
-                            <td className="p-4 text-slate-400">{usr.department || '—'}</td>
-                            <td className="p-4">
-                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                usr.role === 'admin' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
-                                'bg-slate-800 text-slate-400 border border-slate-700'
-                              }`}>
-                                {usr.role.replace('_', ' ')}
-                              </span>
-                            </td>
-                            <td className="p-4 text-right space-x-2">
-                              {usr.email.toLowerCase() !== 'siddhanthsrinivasan@gmail.com' && usr.email !== user?.email && (
-                                <>
-                                  <button
-                                    onClick={() => handlePromoteDemoteUser(usr.id, usr.role)}
-                                    className="text-blue-400 hover:text-blue-300 font-semibold transition-colors"
-                                  >
-                                    {usr.role === 'admin' ? 'Demote to Employee' : 'Promote to Admin'}
-                                  </button>
-                                  <span className="text-slate-700">|</span>
-                                  <button
-                                    onClick={() => handleDeleteUser(usr.id)}
-                                    className="text-red-400 hover:text-red-300 font-semibold transition-colors"
-                                  >
-                                    Delete
-                                  </button>
-                                </>
-                              )}
-                            </td>
-                          </tr>
+                        {usersList
+                          .filter((usr) => {
+                            const nameLower = (usr.name || '').toLowerCase();
+                            const emailLower = (usr.email || '').toLowerCase();
+                            const searchLower = userSearch.toLowerCase();
+                            return nameLower.includes(searchLower) || emailLower.includes(searchLower);
+                          })
+                          .map((usr) => (
+                            <tr key={usr.id} className="hover:bg-slate-900/20">
+                              <td className="p-4 font-bold text-white">{usr.name || '—'}</td>
+                              <td className="p-4 text-slate-400">{usr.email}</td>
+                              <td className="p-4 text-slate-400">{usr.department || '—'}</td>
+                              <td className="p-4">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                  usr.role === 'admin' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
+                                  'bg-slate-800 text-slate-400 border border-slate-700'
+                                }`}>
+                                  {usr.role.replace('_', ' ')}
+                                </span>
+                              </td>
+                              <td className="p-4 text-right space-x-2">
+                                {usr.email.toLowerCase() !== 'siddhanthsrinivasan@gmail.com' && usr.email !== user?.email && (
+                                  <>
+                                    <button
+                                      onClick={() => {
+                                        setEditingUser(usr);
+                                        setEditName(usr.name || '');
+                                        setEditEmail(usr.email || '');
+                                        setEditDeptId(departments.find((d: any) => d.name === usr.department)?.id || '');
+                                        setShowEditUserModal(true);
+                                      }}
+                                      className="text-emerald-400 hover:text-emerald-300 font-semibold transition-colors mr-1 cursor-pointer font-medium"
+                                    >
+                                      Edit
+                                    </button>
+                                    <span className="text-slate-800">|</span>
+                                    <button
+                                      onClick={() => handlePromoteDemoteUser(usr.id, usr.role)}
+                                      className="text-blue-400 hover:text-blue-300 font-semibold transition-colors mr-1 cursor-pointer font-medium"
+                                    >
+                                      {usr.role === 'admin' ? 'Demote' : 'Promote'}
+                                    </button>
+                                    <span className="text-slate-800">|</span>
+                                    <button
+                                      onClick={() => handleDeleteUser(usr.id)}
+                                      className="text-red-400 hover:text-red-300 font-semibold transition-colors cursor-pointer font-medium"
+                                    >
+                                      Delete
+                                    </button>
+                                  </>
+                                )}
+                              </td>
+                            </tr>
                         ))}
                       </tbody>
                     </table>
@@ -1815,6 +1888,77 @@ export const AdminDashboard: React.FC = () => {
                 {importing ? 'Importing...' : 'Confirm Import'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5. Edit User Modal */}
+      {showEditUserModal && editingUser && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-sm p-4 flex justify-center items-start">
+          <div className="my-8 w-full max-w-md bg-stone-900 border border-stone-800 rounded-2xl p-6 shadow-2xl space-y-6 relative animate-fade-in text-left">
+            <button
+              onClick={() => { setShowEditUserModal(false); setEditingUser(null); }}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white cursor-pointer"
+            >
+              ✕
+            </button>
+            <div>
+              <h3 className="text-lg font-bold text-white mb-1">Edit User Profile</h3>
+              <p className="text-xs text-slate-400">
+                Update account details for {editingUser.email}.
+              </p>
+            </div>
+            <form onSubmit={handleSaveEditUser} className="space-y-4">
+              <div>
+                <label className="block text-slate-400 text-[10px] uppercase font-bold tracking-wider mb-2">Email Address</label>
+                <input
+                  type="email"
+                  required
+                  value={editEmail}
+                  onChange={(e) => setEditEmail(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-900 rounded-xl px-4 py-2.5 text-xs text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-400 text-[10px] uppercase font-bold tracking-wider mb-2">Full Name</label>
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  placeholder="No name registered"
+                  className="w-full bg-slate-950 border border-slate-900 rounded-xl px-4 py-2.5 text-xs text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-400 text-[10px] uppercase font-bold tracking-wider mb-2">Department</label>
+                <select
+                  value={editDeptId}
+                  onChange={(e) => setEditDeptId(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-900 rounded-xl px-4 py-2.5 text-xs text-white cursor-pointer"
+                >
+                  <option value="">None (Select Department)</option>
+                  {departments.map((d) => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => { setShowEditUserModal(false); setEditingUser(null); }}
+                  className="flex-1 border border-slate-800 hover:bg-slate-900 text-slate-300 font-semibold py-2.5 rounded-xl text-xs transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingEditUser}
+                  className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 text-white font-semibold py-2.5 rounded-xl text-xs transition-all shadow-md cursor-pointer"
+                >
+                  {savingEditUser ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
