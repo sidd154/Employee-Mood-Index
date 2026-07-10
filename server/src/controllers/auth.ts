@@ -29,10 +29,7 @@ export const sendOTP = async (req: Request, res: Response) => {
     const userExists = userRes.rows.length > 0;
 
     if (!userExists) {
-      const allowed = await isDomainAllowed(emailLower);
-      if (!allowed) {
-        return res.status(400).json({ error: 'This domain is not allowed to register' });
-      }
+      return res.status(400).json({ error: 'This email id is not available in our user list' });
     }
 
     const code = Math.floor(100000 + Math.random() * 900000).toString();
