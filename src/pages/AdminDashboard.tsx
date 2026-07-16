@@ -7,6 +7,35 @@ import {
 
 const API_URL = import.meta.env.VITE_API_URL || window.location.origin;
 
+const generateRecentWeeks = (count = 12) => {
+  const weeks = [];
+  const now = new Date();
+  
+  const currentWeekStart = new Date(now);
+  const day = currentWeekStart.getDay();
+  const diff = currentWeekStart.getDate() - day + (day === 0 ? -6 : 1);
+  currentWeekStart.setDate(diff);
+  currentWeekStart.setHours(0, 0, 0, 0);
+
+  for (let i = 0; i < count; i++) {
+    const start = new Date(currentWeekStart);
+    start.setDate(start.getDate() - (i * 7));
+    
+    const end = new Date(start);
+    end.setDate(end.getDate() + 6);
+    end.setHours(23, 59, 59, 999);
+    
+    let label = i === 0 ? 'Current Week' : i === 1 ? 'Last Week' : `Week of ${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+    
+    weeks.push({
+      label,
+      start: start.toISOString(),
+      end: end.toISOString()
+    });
+  }
+  return weeks;
+};
+
 export const AdminDashboard: React.FC = () => {
   const { user, accessToken, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<'overview' | 'departments' | 'employees' | 'reports' | 'settings' | 'users'>('overview');
@@ -17,6 +46,9 @@ export const AdminDashboard: React.FC = () => {
   const [chartType, setChartType] = useState<'area' | 'line'>('area');
 
   // Overview Data
+  const [recentWeeks] = useState(generateRecentWeeks(12));
+  const [selectedWeek, setSelectedWeek] = useState(recentWeeks[0]);
+  const [exportingWeek, setExportingWeek] = useState(false);
   const [stats, setStats] = useState({ moodIndex: 0, totalEmployees: 0, participationRate: 0, checkinsToday: 0 });
   const [trends, setTrends] = useState<any[]>([]);
   const [distribution, setDistribution] = useState<any[]>([]);
@@ -83,7 +115,8 @@ export const AdminDashboard: React.FC = () => {
       const headers = { 'Authorization': `Bearer ${accessToken}` };
       
       // 1. Overview KPIs
-      const statsRes = await fetch(`${API_URL}/analytics/overview`, { headers });
+      const qs = `startDate=${encodeURIComponent(selectedWeek.start)}&endDate=${encodeURIComponent(selectedWeek.end)}`;
+      const statsRes = await fetch(`${API_URL}/analytics/overview?${qs}`, { headers });
       if (statsRes.ok) setStats(await statsRes.json());
 
       // 2. Trend data
@@ -102,8 +135,8 @@ export const AdminDashboard: React.FC = () => {
       const contribsRes = await fetch(`${API_URL}/analytics/contributors`, { headers });
       if (contribsRes.ok) setContributors(await contribsRes.json());
 
-      // 6. Departments
-      const deptsRes = await fetch(`${API_URL}/analytics/departments`, { headers });
+      // 6. Departments (Week filtered)
+      const deptsRes = await fetch(`${API_URL}/analytics/departments?${qs}`, { headers });
       if (deptsRes.ok) setDepartments(await deptsRes.json());
 
       // 7. Settings
@@ -123,7 +156,7 @@ export const AdminDashboard: React.FC = () => {
 
   useEffect(() => {
     fetchData();
-  }, [accessToken, range]);
+  }, [accessToken, range, selectedWeek]);
 
   // Load employee explorer details
   const fetchEmployees = async () => {
@@ -571,6 +604,40 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
+  // Trigger Specific Week Report
+  const handleExportWeekReport = async () => {
+    if (!accessToken) return;
+
+    setExportingWeek(true);
+
+    try {
+      const res = await fetch(`${API_URL}/reports/admin`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          range: 'custom',
+          startDate: selectedWeek.start,
+          endDate: selectedWeek.end,
+          exportType: 'pdf',
+        }),
+      });
+
+      if (res.ok) {
+        alert('Weekly report exported successfully! Please check your email inbox.');
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Failed to request weekly report');
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setExportingWeek(false);
+    }
+  };
+
   // Auth check
   if (!user) return <Navigate to="/login" replace />;
   if (user.role !== 'admin') {
@@ -709,15 +776,31 @@ export const AdminDashboard: React.FC = () => {
               {activeTab === 'overview' && (
                 <>
                   {/* Top Bar with Time Filters */}
-                  <div className="flex justify-between items-center">
+                  <div className="flex justify-between items-center bg-stone-950 p-4 rounded-2xl border border-stone-850">
                     <div>
-                      <h2 className="text-xl font-bold text-white">Wellbeing Overview</h2>
-                      <p className="text-xs text-stone-400 mt-1">Metrics aggregated from January (Year-to-Date)</p>
+                      <h2 className="text-xl font-bold text-white">Weekly Analysis</h2>
+                      <p className="text-xs text-stone-400 mt-1">Metrics and department breakdown for the selected week</p>
                     </div>
-                    <div>
-                      <span className="text-xs bg-stone-950 border border-stone-800 text-stone-400 px-3.5 py-2 rounded-xl font-semibold">
-                        From January
-                      </span>
+                    <div className="flex gap-4 items-center">
+                      <select
+                        value={selectedWeek.start}
+                        onChange={(e) => {
+                          const w = recentWeeks.find((rw) => rw.start === e.target.value);
+                          if (w) setSelectedWeek(w);
+                        }}
+                        className="bg-stone-900 border border-stone-800 rounded-xl px-4 py-2.5 text-xs text-white cursor-pointer hover:border-stone-700 transition-colors"
+                      >
+                        {recentWeeks.map((w) => (
+                          <option key={w.start} value={w.start}>{w.label}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={handleExportWeekReport}
+                        disabled={exportingWeek}
+                        className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-lg shadow-blue-500/20 whitespace-nowrap"
+                      >
+                        {exportingWeek ? 'Exporting...' : 'Export Week PDF'}
+                      </button>
                     </div>
                   </div>
 
@@ -913,6 +996,39 @@ export const AdminDashboard: React.FC = () => {
                       </div>
                     </div>
                   </div>
+
+                  {/* Department Breakdown for Selected Week */}
+                  <div className="pt-6">
+                    <h3 className="text-sm font-bold text-white mb-4">Department Breakdown ({selectedWeek.label})</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      {departments.map((dept) => (
+                        <div
+                          key={dept.id}
+                          onClick={() => {
+                            setActiveTab('departments');
+                            loadDeptDetails(dept.id, 'ytd');
+                          }}
+                          className="glass p-5 rounded-2xl border border-stone-850 hover:border-blue-500/50 hover:bg-stone-900/40 transition-all cursor-pointer group"
+                        >
+                          <div className="flex justify-between items-start mb-4">
+                            <h3 className="font-bold text-sm text-white group-hover:text-blue-400 transition-colors">{dept.name}</h3>
+                          </div>
+                          <div className="space-y-3">
+                            <div className="flex justify-between text-xs">
+                              <span className="text-stone-400">Wellness Index:</span>
+                              <span className="font-bold text-blue-500">{dept.moodIndex}</span>
+                            </div>
+                            <div className="flex justify-between text-xs items-center">
+                              <span className="text-stone-400">Participation:</span>
+                              <span className="font-bold text-stone-200">
+                                {dept.checkedInThisWeek} / {dept.employeeCount} <span className="font-normal text-stone-500 text-[10px]">Members</span>
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </>
               )}
 
@@ -944,9 +1060,11 @@ export const AdminDashboard: React.FC = () => {
                             <span className="text-slate-400">Wellness Index:</span>
                             <span className="font-bold text-blue-500">{dept.moodIndex}</span>
                           </div>
-                          <div className="flex justify-between text-xs">
+                          <div className="flex justify-between text-xs items-center">
                             <span className="text-slate-400">Weekly Participation:</span>
-                            <span className="font-bold text-slate-200">{dept.participationRate}%</span>
+                            <span className="font-bold text-slate-200">
+                              {dept.checkedInThisWeek} / {dept.employeeCount} <span className="font-normal text-slate-500 text-[10px]">Members</span>
+                            </span>
                           </div>
                         </div>
                       </div>

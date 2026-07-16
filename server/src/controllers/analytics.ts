@@ -9,8 +9,20 @@ function getDateFilterSQL(range: string, paramIndexStart: number = 1): { sql: st
 }
 
 export const getOverviewStats = async (req: AuthenticatedRequest, res: Response) => {
+  const { startDate, endDate } = req.query;
+
   try {
-    const moodRes = await query(`SELECT AVG(mood_score) as avg_score FROM mood_entries`);
+    let moodFilter = '';
+    let checkinFilter = `created_at >= DATE_TRUNC('week', NOW())`;
+    const params: any[] = [];
+
+    if (startDate && endDate) {
+      params.push(new Date(startDate as string), new Date(endDate as string));
+      moodFilter = `WHERE created_at >= $1 AND created_at <= $2`;
+      checkinFilter = `created_at >= $1 AND created_at <= $2`;
+    }
+
+    const moodRes = await query(`SELECT AVG(mood_score) as avg_score FROM mood_entries ${moodFilter}`, params);
     const avgScore = parseFloat(moodRes.rows[0].avg_score || '0');
     const moodIndex = parseFloat(avgScore.toFixed(1));
 
@@ -23,7 +35,8 @@ export const getOverviewStats = async (req: AuthenticatedRequest, res: Response)
 
     const thisWeekCheckinsRes = await query(
       `SELECT COUNT(*) as total FROM mood_entries 
-       WHERE created_at >= DATE_TRUNC('week', NOW())`
+       WHERE ${checkinFilter}`,
+      params
     );
     const checkinsThisWeek = parseInt(thisWeekCheckinsRes.rows[0].total || '0');
     const participationRate = totalEmployees > 0 ? Math.min(100, Math.round((checkinsThisWeek / totalEmployees) * 100)) : 0;
@@ -116,19 +129,32 @@ export const getMoodDistribution = async (req: AuthenticatedRequest, res: Respon
 };
 
 export const getDepartmentAnalytics = async (req: AuthenticatedRequest, res: Response) => {
+  const { startDate, endDate } = req.query;
+
   try {
+    let dateFilter = `m.created_at >= DATE_TRUNC('year', NOW())`;
+    let participationFilter = `m.created_at >= DATE_TRUNC('week', NOW())`;
+    const params: any[] = [];
+
+    if (startDate && endDate) {
+      params.push(new Date(startDate as string), new Date(endDate as string));
+      dateFilter = `m.created_at >= $1 AND m.created_at <= $2`;
+      participationFilter = `m.created_at >= $1 AND m.created_at <= $2`;
+    }
+
     const deptRes = await query(
       `SELECT 
          d.id, 
          d.name,
          COUNT(DISTINCT u.id) as employee_count,
          ROUND(AVG(m.mood_score), 1) as mood_index,
-         COUNT(DISTINCT CASE WHEN m.created_at >= DATE_TRUNC('week', NOW()) THEN u.id END) as checked_in_this_week
+         COUNT(DISTINCT CASE WHEN ${participationFilter} THEN u.id END) as checked_in_this_week
        FROM departments d
        LEFT JOIN users u ON u.department_id = d.id AND u.role_id = (SELECT id FROM roles WHERE name = 'employee')
-       LEFT JOIN mood_entries m ON m.user_id = u.id AND m.created_at >= DATE_TRUNC('year', NOW())
+       LEFT JOIN mood_entries m ON m.user_id = u.id AND ${dateFilter}
        GROUP BY d.id, d.name
-       ORDER BY d.name ASC`
+       ORDER BY d.name ASC`,
+      params
     );
 
     const depts = deptRes.rows.map((row) => {
@@ -142,6 +168,7 @@ export const getDepartmentAnalytics = async (req: AuthenticatedRequest, res: Res
         employeeCount,
         moodIndex: parseFloat(row.mood_index || '0'),
         participationRate,
+        checkedInThisWeek,
       };
     });
 
@@ -307,7 +334,7 @@ export const getEmployeeExplorer = async (req: AuthenticatedRequest, res: Respon
         department: row.department || 'Other',
         moodIndex: row.mood_index ? parseFloat(row.mood_index) : null,
         participationRate,
-        lastCheckIn: row.lastCheckIn,
+        lastCheckIn: row.last_check_in,
       };
     });
 
