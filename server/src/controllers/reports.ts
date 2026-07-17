@@ -279,14 +279,16 @@ export const buildAndEmailAdminReport = async (userId: string, userEmail: string
     `SELECT 
        d.name,
        COUNT(DISTINCT u.id) as headcount,
-       ROUND(AVG(m.mood_score), 1) as overall_avg,
+       COUNT(DISTINCT CASE WHEN 1=1 ${filterClause} THEN u.id END) as checked_in,
+       ROUND(AVG(CASE WHEN 1=1 ${filterClause} THEN m.mood_score END), 1) as overall_avg,
        ROUND(AVG(CASE WHEN m.created_at >= DATE_TRUNC('month', NOW()) THEN m.mood_score END), 1) as this_month_avg,
        ROUND(AVG(CASE WHEN m.created_at >= DATE_TRUNC('month', NOW() - INTERVAL '1 month') AND m.created_at < DATE_TRUNC('month', NOW()) THEN m.mood_score END), 1) as last_month_avg
      FROM departments d
      LEFT JOIN users u ON u.department_id = d.id AND u.role_id = (SELECT id FROM roles WHERE name = 'employee')
      LEFT JOIN mood_entries m ON m.user_id = u.id
      GROUP BY d.name
-     ORDER BY d.name ASC`
+     ORDER BY d.name ASC`,
+    filterValues
   );
 
   const feelRes = await query(
@@ -336,6 +338,7 @@ export const buildAndEmailAdminReport = async (userId: string, userEmail: string
       departments: deptStatsRes.rows.map(row => ({
         name: row.name,
         headcount: parseInt(row.headcount || '0'),
+        checkedIn: parseInt(row.checked_in || '0'),
         overallAvg: parseFloat(row.overall_avg || '0') || null,
         thisMonthAvg: parseFloat(row.this_month_avg || '0') || null,
         lastMonthAvg: parseFloat(row.last_month_avg || '0') || null,

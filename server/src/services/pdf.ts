@@ -300,6 +300,7 @@ export const generateAdminReportPDF = (
     departments: {
       name: string;
       headcount: number;
+      checkedIn: number;
       overallAvg: number | null;
       thisMonthAvg: number | null;
       lastMonthAvg: number | null;
@@ -392,7 +393,7 @@ export const generateAdminReportPDF = (
     doc.text('This Month', 210, tblHeaderY);
     doc.text('Last Month', 300, tblHeaderY);
     doc.text('Overall Avg', 390, tblHeaderY);
-    doc.text('Team Size', 480, tblHeaderY);
+    doc.text('Participation', 480, tblHeaderY);
 
     doc.strokeColor(gridColor).lineWidth(0.8).moveTo(50, tblHeaderY + 14).lineTo(545, tblHeaderY + 14).stroke();
 
@@ -412,7 +413,7 @@ export const generateAdminReportPDF = (
         doc.fillColor(accentColor).text(dept.thisMonthAvg ? dept.thisMonthAvg.toFixed(1) : '—', 210, rowY);
         doc.fillColor(primaryColor).font('Helvetica').text(dept.lastMonthAvg ? dept.lastMonthAvg.toFixed(1) : '—', 300, rowY);
         doc.fillColor(primaryColor).text(dept.overallAvg ? dept.overallAvg.toFixed(1) : '—', 390, rowY);
-        doc.fillColor(secondaryColor).text(`${dept.headcount} people`, 480, rowY);
+        doc.fillColor(secondaryColor).text(`${dept.checkedIn} / ${dept.headcount} people`, 480, rowY);
         rowY += 18;
       });
     }
