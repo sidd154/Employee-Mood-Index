@@ -45,9 +45,9 @@ export const AdminDashboard: React.FC = () => {
   const [range] = useState<'7d' | '30d' | 'ytd'>('ytd');
   const [chartType, setChartType] = useState<'area' | 'line'>('area');
 
-  // Overview Data
   const [recentWeeks] = useState(generateRecentWeeks(12));
-  const [selectedWeek, setSelectedWeek] = useState(recentWeeks[0]);
+  const [selectedStartWeek, setSelectedStartWeek] = useState(recentWeeks[0]);
+  const [selectedEndWeek, setSelectedEndWeek] = useState(recentWeeks[0]);
   const [exportingWeek, setExportingWeek] = useState(false);
   const [stats, setStats] = useState({ moodIndex: 0, totalEmployees: 0, participationRate: 0, checkinsToday: 0 });
   const [trends, setTrends] = useState<any[]>([]);
@@ -115,7 +115,7 @@ export const AdminDashboard: React.FC = () => {
       const headers = { 'Authorization': `Bearer ${accessToken}` };
       
       // 1. Overview KPIs
-      const qs = `startDate=${encodeURIComponent(selectedWeek.start)}&endDate=${encodeURIComponent(selectedWeek.end)}`;
+      const qs = `startDate=${encodeURIComponent(selectedStartWeek.start)}&endDate=${encodeURIComponent(selectedEndWeek.end)}`;
       const statsRes = await fetch(`${API_URL}/analytics/overview?${qs}`, { headers });
       if (statsRes.ok) setStats(await statsRes.json());
 
@@ -156,7 +156,7 @@ export const AdminDashboard: React.FC = () => {
 
   useEffect(() => {
     fetchData();
-  }, [accessToken, range, selectedWeek]);
+  }, [accessToken, range, selectedStartWeek, selectedEndWeek]);
 
   // Load employee explorer details
   const fetchEmployees = async () => {
@@ -619,8 +619,8 @@ export const AdminDashboard: React.FC = () => {
         },
         body: JSON.stringify({
           range: 'custom',
-          startDate: selectedWeek.start,
-          endDate: selectedWeek.end,
+          startDate: selectedStartWeek.start,
+          endDate: selectedEndWeek.end,
           exportType: 'pdf',
         }),
       });
@@ -782,18 +782,36 @@ export const AdminDashboard: React.FC = () => {
                       <p className="text-xs text-stone-400 mt-1">Metrics and department breakdown for the selected week</p>
                     </div>
                     <div className="flex gap-4 items-center">
-                      <select
-                        value={selectedWeek.start}
-                        onChange={(e) => {
-                          const w = recentWeeks.find((rw) => rw.start === e.target.value);
-                          if (w) setSelectedWeek(w);
-                        }}
-                        className="bg-stone-900 border border-stone-800 rounded-xl px-4 py-2.5 text-xs text-white cursor-pointer hover:border-stone-700 transition-colors"
-                      >
-                        {recentWeeks.map((w) => (
-                          <option key={w.start} value={w.start}>{w.label}</option>
-                        ))}
-                      </select>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-stone-400">From:</span>
+                        <select
+                          value={selectedStartWeek.start}
+                          onChange={(e) => {
+                            const w = recentWeeks.find((rw) => rw.start === e.target.value);
+                            if (w) setSelectedStartWeek(w);
+                          }}
+                          className="bg-stone-900 border border-stone-800 rounded-xl px-3 py-2 text-xs text-white cursor-pointer hover:border-stone-700"
+                        >
+                          {recentWeeks.map((w) => (
+                            <option key={w.start} value={w.start}>{w.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-stone-400">To:</span>
+                        <select
+                          value={selectedEndWeek.end}
+                          onChange={(e) => {
+                            const w = recentWeeks.find((rw) => rw.end === e.target.value);
+                            if (w) setSelectedEndWeek(w);
+                          }}
+                          className="bg-stone-900 border border-stone-800 rounded-xl px-3 py-2 text-xs text-white cursor-pointer hover:border-stone-700"
+                        >
+                          {recentWeeks.map((w) => (
+                            <option key={w.end} value={w.end}>{w.label}</option>
+                          ))}
+                        </select>
+                      </div>
                       <button
                         onClick={handleExportWeekReport}
                         disabled={exportingWeek}
@@ -999,7 +1017,7 @@ export const AdminDashboard: React.FC = () => {
 
                   {/* Department Breakdown for Selected Week */}
                   <div className="pt-6">
-                    <h3 className="text-sm font-bold text-white mb-4">Department Breakdown ({selectedWeek.label})</h3>
+                    <h3 className="text-sm font-bold text-white mb-4">Department Breakdown ({selectedStartWeek.label} {selectedStartWeek.start !== selectedEndWeek.start ? `- ${selectedEndWeek.label}` : ''})</h3>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                       {departments.map((dept) => (
                         <div
@@ -1035,9 +1053,43 @@ export const AdminDashboard: React.FC = () => {
               {/* TAB 2: DEPARTMENTS */}
               {activeTab === 'departments' && (
                 <div className="space-y-6">
-                  <div>
-                    <h2 className="text-xl font-bold text-white">Department breakdown</h2>
-                    <p className="text-xs text-slate-400 mt-1">Click a department to view detailed reports</p>
+                  <div className="flex justify-between items-center bg-stone-950 p-4 rounded-2xl border border-stone-850">
+                    <div>
+                      <h2 className="text-xl font-bold text-white">Department breakdown</h2>
+                      <p className="text-xs text-slate-400 mt-1">Metrics filtered by the selected week(s)</p>
+                    </div>
+                    <div className="flex gap-4 items-center">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-stone-400">From:</span>
+                        <select
+                          value={selectedStartWeek.start}
+                          onChange={(e) => {
+                            const w = recentWeeks.find((rw) => rw.start === e.target.value);
+                            if (w) setSelectedStartWeek(w);
+                          }}
+                          className="bg-stone-900 border border-stone-800 rounded-xl px-3 py-2 text-xs text-white cursor-pointer hover:border-stone-700"
+                        >
+                          {recentWeeks.map((w) => (
+                            <option key={w.start} value={w.start}>{w.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-stone-400">To:</span>
+                        <select
+                          value={selectedEndWeek.end}
+                          onChange={(e) => {
+                            const w = recentWeeks.find((rw) => rw.end === e.target.value);
+                            if (w) setSelectedEndWeek(w);
+                          }}
+                          className="bg-stone-900 border border-stone-800 rounded-xl px-3 py-2 text-xs text-white cursor-pointer hover:border-stone-700"
+                        >
+                          {recentWeeks.map((w) => (
+                            <option key={w.end} value={w.end}>{w.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
