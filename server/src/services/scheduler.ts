@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import { query } from '../config/db';
-import { sendEmail } from './email';
+import { sendEmail, buildEmailTemplate } from './email';
 import { buildAndEmailAdminReport } from '../controllers/reports';
 import { getCurrentCheckinWindowStart } from '../controllers/checkins';
 
@@ -25,16 +25,14 @@ export const sendMorningReminders = async () => {
       await sendEmail({
         to: emp.email,
         subject: 'How was your week?',
-        html: `
-          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
-            <h2 style="color: #0f172a; margin-bottom: 16px;">Good morning, ${firstName}!</h2>
-            <p style="color: #475569; font-size: 16px; line-height: 24px;">How was your week overall? Check in and let us know in under 15 seconds.</p>
-            <div style="text-align: center; margin: 30px 0;">
-              <a href="${frontendUrl}" style="background-color: #2563eb; color: #ffffff; padding: 12px 24px; border-radius: 6px; font-weight: bold; text-decoration: none; display: inline-block;">Complete Weekly Check-In</a>
-            </div>
-            <p style="color: #94a3b8; font-size: 13px;">You are receiving this because you are registered on the Employee Wellness Index.</p>
+        html: buildEmailTemplate('Weekly Check-In', `
+          <h2 style="color: #0f172a; margin-bottom: 16px;">Good morning, ${firstName}!</h2>
+          <p style="color: #475569; font-size: 16px; line-height: 24px;">How was your week overall? Check in and let us know in under 15 seconds.</p>
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${frontendUrl}" style="background-color: #2563eb; color: #ffffff; padding: 12px 24px; border-radius: 6px; font-weight: bold; text-decoration: none; display: inline-block;">Complete Weekly Check-In</a>
           </div>
-        `,
+          <p style="color: #94a3b8; font-size: 13px;">You are receiving this because you are registered on the Employee Wellness Index.</p>
+        `),
         emailType: 'Reminder_9AM',
       });
     }
@@ -65,16 +63,14 @@ export const sendAfternoonReminders = async () => {
       await sendEmail({
         to: emp.email,
         subject: 'Reminder: Complete your weekly check-in',
-        html: `
-          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
-            <h2 style="color: #0f172a; margin-bottom: 16px;">Hi ${firstName},</h2>
-            <p style="color: #475569; font-size: 16px; line-height: 24px;">Don't forget to submit your weekly wellbeing check-in. It takes less than 15 seconds!</p>
-            <div style="text-align: center; margin: 30px 0;">
-              <a href="${frontendUrl}" style="background-color: #f97316; color: #ffffff; padding: 12px 24px; border-radius: 6px; font-weight: bold; text-decoration: none; display: inline-block;">Check In Now</a>
-            </div>
-            <p style="color: #94a3b8; font-size: 13px;">This is a friendly reminder sent only if your weekly check-in is incomplete.</p>
+        html: buildEmailTemplate('Missing Check-In', `
+          <h2 style="color: #0f172a; margin-bottom: 16px;">Hi ${firstName},</h2>
+          <p style="color: #475569; font-size: 16px; line-height: 24px;">Don't forget to submit your weekly wellbeing check-in. It takes less than 15 seconds!</p>
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${frontendUrl}" style="background-color: #f97316; color: #ffffff; padding: 12px 24px; border-radius: 6px; font-weight: bold; text-decoration: none; display: inline-block;">Check In Now</a>
           </div>
-        `,
+          <p style="color: #94a3b8; font-size: 13px;">This is a friendly reminder sent only if your weekly check-in is incomplete.</p>
+        `),
         emailType: 'Reminder_4PM',
       });
     }

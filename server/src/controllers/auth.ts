@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { query } from '../config/db';
-import { sendEmail } from '../services/email';
+import { sendEmail, buildEmailTemplate } from '../services/email';
 import { logAudit } from '../utils/audit';
 
 const ACCESS_TOKEN_EXPIRY = '15m';
@@ -46,17 +46,14 @@ export const sendOTP = async (req: Request, res: Response) => {
 
     const emailSent = await sendEmail({
       to: emailLower,
-      subject: 'Your Employee Wellness Index Login Code',
-      html: `
-        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
-          <h2 style="color: #0f172a; margin-bottom: 16px;">Employee Wellness Index</h2>
-          <p style="color: #475569; font-size: 16px; line-height: 24px;">Your 6-digit one-time code to access your account is:</p>
-          <div style="background-color: #f1f5f9; padding: 16px; text-align: center; font-size: 32px; font-weight: bold; letter-spacing: 4px; color: #1e293b; border-radius: 6px; margin: 24px 0;">
-            ${code}
-          </div>
-          <p style="color: #94a3b8; font-size: 14px;">This code will expire in 10 minutes. If you did not request this code, you can safely ignore this email.</p>
+      subject: 'Your Wellness Index Login Code',
+      html: buildEmailTemplate('Verify your email', `
+        <p>Your verification code for the Employee Wellness Index is:</p>
+        <div style="background-color: #f1f5f9; padding: 16px; border-radius: 6px; text-align: center; margin: 24px 0;">
+          <span style="font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #2563eb;">${code}</span>
         </div>
-      `,
+        <p style="font-size: 14px;">This code will expire in 10 minutes. If you did not request this code, you can safely ignore this email.</p>
+      `),
       emailType: 'OTP',
     });
 

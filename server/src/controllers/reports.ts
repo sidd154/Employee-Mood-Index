@@ -2,7 +2,7 @@ import { Response } from 'express';
 import { AuthenticatedRequest } from '../middleware/auth';
 import { query } from '../config/db';
 import { generateEmployeeReportPDF, generateAdminReportPDF } from '../services/pdf';
-import { sendEmail } from '../services/email';
+import { sendEmail, buildEmailTemplate } from '../services/email';
 import { logAudit } from '../utils/audit';
 
 function getRangeLabel(range: string, start?: string, end?: string): string {
@@ -153,16 +153,11 @@ export const requestEmployeeReport = async (req: AuthenticatedRequest, res: Resp
 
     await sendEmail({
       to: req.user.email,
-      subject: `Your Wellbeing Report - ${rangeLabel}`,
-      html: `
-        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <h2 style="color: #0f172a;">Your Wellbeing Report</h2>
-          <p>Hi ${employeeName},</p>
-          <p>Your requested wellbeing report for the period <strong>${rangeLabel}</strong> is ready. Please find the PDF attached to this email.</p>
-          <br/>
-          <p style="color: #64748b; font-size: 13px;">Employee Wellness Index team</p>
-        </div>
-      `,
+      subject: 'Your Wellbeing Report',
+      html: buildEmailTemplate('Your Wellbeing Report', `
+        <p>Hi ${employeeName},</p>
+        <p>Your requested wellbeing report for the period <strong>${rangeLabel}</strong> is ready. Please find the PDF attached to this email.</p>
+      `),
       emailType: 'Report',
       attachments: [
         {
@@ -384,16 +379,10 @@ export const buildAndEmailAdminReport = async (userId: string, userEmail: string
 
   await sendEmail({
     to: userEmail,
-    subject: `Wellbeing Analytics Report - ${rangeLabel}`,
-    html: `
-      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-        <h2 style="color: #0f172a;">Company Wellbeing Analytics Report</h2>
-        <p>Hi Admin,</p>
-        <p>The requested analytics report for the period <strong>${rangeLabel}</strong> is ready. Please find the exported <strong>${exportType.toUpperCase()}</strong> file attached to this email.</p>
-        <br/>
-        <p style="color: #64748b; font-size: 13px;">Employee Wellness Index Team</p>
-      </div>
-    `,
+    subject: `Weekly Wellbeing Export: ${rangeLabel}`,
+    html: buildEmailTemplate('Admin Wellbeing Export', `
+      <p>The requested analytics report for the period <strong>${rangeLabel}</strong> is ready. Please find the exported <strong>${exportType.toUpperCase()}</strong> file attached to this email.</p>
+    `),
     emailType: 'Report',
     attachments: [
       {

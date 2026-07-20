@@ -16,6 +16,40 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+export const buildEmailTemplate = (title: string, content: string) => {
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>${title}</title>
+    </head>
+    <body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+      <div style="max-width: 600px; margin: 40px auto; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);">
+        <!-- Header -->
+        <div style="background-color: #0f172a; padding: 24px; text-align: center;">
+          <h1 style="color: #ffffff; margin: 0; font-size: 20px; font-weight: 600; letter-spacing: 0.5px;">Employee Wellness Index</h1>
+        </div>
+        
+        <!-- Content -->
+        <div style="padding: 32px 24px;">
+          <h2 style="color: #0f172a; margin-top: 0; margin-bottom: 20px; font-size: 22px;">${title}</h2>
+          <div style="color: #334155; font-size: 16px; line-height: 1.6;">
+            ${content}
+          </div>
+        </div>
+        
+        <!-- Footer -->
+        <div style="background-color: #f1f5f9; padding: 24px; text-align: center; border-top: 1px solid #e2e8f0;">
+          <p style="color: #64748b; margin: 0; font-size: 13px;">This is an automated message from the Employee Wellness Index.</p>
+          <p style="color: #94a3b8; margin: 8px 0 0 0; font-size: 12px;">&copy; ${new Date().getFullYear()} Pixel Studios. All rights reserved.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+};
+
 export const sendEmail = async (options: {
   to: string;
   subject: string;
