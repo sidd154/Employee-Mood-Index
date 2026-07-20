@@ -5,6 +5,8 @@ import path from 'path';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import compression from 'compression';
+import morgan from 'morgan';
 import dotenv from 'dotenv';
 import { query } from './config/db';
 import { logAudit } from './utils/audit';
@@ -44,6 +46,14 @@ app.use(
   })
 );
 app.use(express.json());
+app.use(compression());
+
+// Setup structured request logging
+if (process.env.NODE_ENV === 'production') {
+  app.use(morgan('combined'));
+} else {
+  app.use(morgan('dev'));
+}
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -90,6 +100,17 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   res.status(err.status || 500).json({
     error: process.env.NODE_ENV === 'production' ? 'Internal server error' : err.message,
   });
+});
+
+// Graceful unhandled error logging
+process.on('uncaughtException', (err) => {
+  console.error('UNCAUGHT EXCEPTION! Shutting down...', err);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (err) => {
+  console.error('UNHANDLED REJECTION! Shutting down...', err);
+  process.exit(1);
 });
 
 async function initializeDatabase() {
