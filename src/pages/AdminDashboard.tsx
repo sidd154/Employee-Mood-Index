@@ -1241,15 +1241,21 @@ export const AdminDashboard: React.FC = () => {
                                 return found ? found.score : null;
                               };
                               
-                              const s1 = getScore(w1);
+                              const s1 = getScore(w1); // Newest
                               const s2 = getScore(w2);
                               const s3 = getScore(w3);
-                              const s4 = getScore(w4);
+                              const s4 = getScore(w4); // Oldest
                               
+                              const missedCurrent = s1 === null;
                               let bgClass = "bg-emerald-900/10 hover:bg-emerald-900/20";
-                              if (emp.missedWeeks === 1) bgClass = "bg-red-900/20 hover:bg-red-900/30";
-                              if (emp.missedWeeks === 2) bgClass = "bg-red-900/40 hover:bg-red-900/50";
-                              if (emp.missedWeeks >= 3) bgClass = "bg-red-900/60 hover:bg-red-900/70";
+                              
+                              if (missedCurrent) {
+                                if (emp.missedWeeks === 1) bgClass = "bg-red-900/20 hover:bg-red-900/30";
+                                else if (emp.missedWeeks === 2) bgClass = "bg-red-900/40 hover:bg-red-900/50";
+                                else bgClass = "bg-red-900/60 hover:bg-red-900/70";
+                              } else {
+                                if (emp.missedWeeks === 0) bgClass = "bg-emerald-900/20 hover:bg-emerald-900/30";
+                              }
 
                               return (
                                 <tr
@@ -1259,12 +1265,12 @@ export const AdminDashboard: React.FC = () => {
                                 >
                                   <td className="p-4 font-bold text-white">{emp.name}</td>
                                   <td className="p-4 text-slate-400">{emp.department}</td>
-                                  <td className="p-4 text-center font-bold">{s1 !== null ? <span className="text-emerald-400">{s1}</span> : <span className="text-red-400/50">—</span>}</td>
-                                  <td className="p-4 text-center font-bold">{s2 !== null ? <span className="text-emerald-400">{s2}</span> : <span className="text-red-400/50">—</span>}</td>
-                                  <td className="p-4 text-center font-bold">{s3 !== null ? <span className="text-emerald-400">{s3}</span> : <span className="text-red-400/50">—</span>}</td>
-                                  <td className="p-4 text-center font-bold">{s4 !== null ? <span className="text-emerald-400">{s4}</span> : <span className="text-red-400/50">—</span>}</td>
-                                </tr>
-                              );
+                                <td className="p-4 text-center font-bold">{s4 !== null ? <span className="text-emerald-400">{s4}</span> : <span className="text-red-400/50">—</span>}</td>
+                                <td className="p-4 text-center font-bold">{s3 !== null ? <span className="text-emerald-400">{s3}</span> : <span className="text-red-400/50">—</span>}</td>
+                                <td className="p-4 text-center font-bold">{s2 !== null ? <span className="text-emerald-400">{s2}</span> : <span className="text-red-400/50">—</span>}</td>
+                                <td className="p-4 text-center font-bold">{s1 !== null ? <span className="text-emerald-400">{s1}</span> : <span className="text-red-400/50">—</span>}</td>
+                              </tr>
+                            );
                             })}
                           {employees.length === 0 && (
                             <tr>
@@ -1891,24 +1897,30 @@ export const AdminDashboard: React.FC = () => {
                               return found ? found.score : null;
                             };
                             
-                            const s1 = getScore(w1);
+                            const s1 = getScore(w1); // Newest
                             const s2 = getScore(w2);
                             const s3 = getScore(w3);
-                            const s4 = getScore(w4);
+                            const s4 = getScore(w4); // Oldest
                             
+                            const missedCurrent = s1 === null;
                             let bgClass = "bg-emerald-900/10 hover:bg-emerald-900/20";
-                            if (emp.missedWeeks === 1) bgClass = "bg-red-900/20 hover:bg-red-900/30";
-                            if (emp.missedWeeks === 2) bgClass = "bg-red-900/40 hover:bg-red-900/50";
-                            if (emp.missedWeeks >= 3) bgClass = "bg-red-900/60 hover:bg-red-900/70";
+                            
+                            if (missedCurrent) {
+                              if (emp.missedWeeks === 1) bgClass = "bg-red-900/20 hover:bg-red-900/30";
+                              else if (emp.missedWeeks === 2) bgClass = "bg-red-900/40 hover:bg-red-900/50";
+                              else bgClass = "bg-red-900/60 hover:bg-red-900/70";
+                            } else {
+                              if (emp.missedWeeks === 0) bgClass = "bg-emerald-900/20 hover:bg-emerald-900/30";
+                            }
 
                             return (
-                              <tr key={emp.id} className={`${bgClass} transition-colors`}>
+                              <tr key={emp.id} className={`${bgClass} transition-colors border-b border-slate-900/50`}>
                                 <td className="p-4 font-bold text-white">{emp.name}</td>
                                 <td className="p-4 text-slate-400">{emp.email}</td>
-                                <td className="p-4 text-center font-bold">{s1 !== null ? <span className="text-emerald-400">{s1}</span> : <span className="text-red-400/50">—</span>}</td>
-                                <td className="p-4 text-center font-bold">{s2 !== null ? <span className="text-emerald-400">{s2}</span> : <span className="text-red-400/50">—</span>}</td>
-                                <td className="p-4 text-center font-bold">{s3 !== null ? <span className="text-emerald-400">{s3}</span> : <span className="text-red-400/50">—</span>}</td>
                                 <td className="p-4 text-center font-bold">{s4 !== null ? <span className="text-emerald-400">{s4}</span> : <span className="text-red-400/50">—</span>}</td>
+                                <td className="p-4 text-center font-bold">{s3 !== null ? <span className="text-emerald-400">{s3}</span> : <span className="text-red-400/50">—</span>}</td>
+                                <td className="p-4 text-center font-bold">{s2 !== null ? <span className="text-emerald-400">{s2}</span> : <span className="text-red-400/50">—</span>}</td>
+                                <td className="p-4 text-center font-bold">{s1 !== null ? <span className="text-emerald-400">{s1}</span> : <span className="text-red-400/50">—</span>}</td>
                               </tr>
                             );
                           })}
