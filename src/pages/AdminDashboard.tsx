@@ -12,9 +12,20 @@ const generateRecentWeeks = (count = 12) => {
   const now = new Date();
   
   const currentWeekStart = new Date(now);
-  const day = currentWeekStart.getDay();
-  const diff = currentWeekStart.getDate() - day + (day === 0 ? -6 : 1);
-  currentWeekStart.setDate(diff);
+  const day = currentWeekStart.getDay(); // 0=Sun, 1=Mon...5=Fri, 6=Sat
+  
+  // Find the most recent Friday (or today if today is Friday)
+  let diff = 0;
+  if (day === 5) {
+    diff = 0;
+  } else if (day === 6) {
+    diff = -1;
+  } else {
+    // 0=Sun to 4=Thu -> subtract (day + 2)
+    diff = -(day + 2);
+  }
+  
+  currentWeekStart.setDate(currentWeekStart.getDate() + diff);
   currentWeekStart.setHours(0, 0, 0, 0);
 
   for (let i = 0; i < count; i++) {
@@ -1824,7 +1835,7 @@ export const AdminDashboard: React.FC = () => {
                 </div>
 
                 {/* Employees List */}
-                <div className="bg-slate-900/50 border border-slate-900 rounded-xl overflow-hidden">
+                <div className="glass rounded-xl border border-slate-900 overflow-hidden mt-6">
                   <div className="p-4 border-b border-slate-900">
                     <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Department Members</h4>
                   </div>
@@ -1834,21 +1845,78 @@ export const AdminDashboard: React.FC = () => {
                         <tr>
                           <th className="p-4">Name</th>
                           <th className="p-4">Email</th>
-                          <th className="p-4 text-center">Wellness Index</th>
-                          <th className="p-4 text-right">Last Check-In</th>
+                          <th className="p-4 text-center">Week 1</th>
+                          <th className="p-4 text-center">Week 2</th>
+                          <th className="p-4 text-center">Week 3</th>
+                          <th className="p-4 text-center">Week 4</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-900 text-slate-300">
-                        {(deptDetails.employees || []).map((emp: any) => (
-                          <tr key={emp.id} className="hover:bg-slate-900/30">
-                            <td className="p-4 font-bold text-white">{emp.name}</td>
-                            <td className="p-4 text-slate-400">{emp.email}</td>
-                            <td className="p-4 text-center font-bold text-blue-500">{emp.moodIndex || '—'}</td>
-                            <td className="p-4 text-right text-slate-400">
-                              {emp.last_check_in ? new Date(emp.last_check_in).toLocaleDateString() : 'Never'}
-                            </td>
+                      <tbody className="divide-y divide-slate-900/50 text-slate-300">
+                        {(deptDetails.employees || [])
+                          .map((emp: any) => {
+                            // Calculate missed checkins in the selected date range
+                            const filterStart = new Date(selectedStartWeek.start).getTime();
+                            const filterEnd = new Date(selectedEndWeek.end).getTime();
+                            const weeksInRange = Math.max(1, Math.ceil((filterEnd - filterStart) / (1000 * 60 * 60 * 24 * 7)));
+                            
+                            let checkinsInRange = 0;
+                            const history = Array.isArray(emp.checkinHistory) ? emp.checkinHistory : [];
+                            history.forEach((h: any) => {
+                              const hTime = new Date(h.week).getTime();
+                              if (hTime >= filterStart && hTime <= filterEnd) {
+                                checkinsInRange++;
+                              }
+                            });
+                            
+                            const missedWeeks = Math.max(0, weeksInRange - checkinsInRange);
+                            return { ...emp, missedWeeks };
+                          })
+                          .sort((a: any, b: any) => a.missedWeeks - b.missedWeeks)
+                          .map((emp: any) => {
+                            // Identify history for the last 4 calendar weeks anchoring from selectedEndWeek
+                            const end = new Date(selectedEndWeek.end);
+                            const w1 = new Date(end); w1.setDate(w1.getDate() - 6); w1.setHours(0,0,0,0);
+                            const w2 = new Date(w1); w2.setDate(w2.getDate() - 7);
+                            const w3 = new Date(w2); w3.setDate(w3.getDate() - 7);
+                            const w4 = new Date(w3); w4.setDate(w4.getDate() - 7);
+                            
+                            const getScore = (startOfWeek: Date) => {
+                              const endOfWeek = new Date(startOfWeek);
+                              endOfWeek.setDate(endOfWeek.getDate() + 6);
+                              endOfWeek.setHours(23,59,59,999);
+                              const found = (emp.checkinHistory || []).find((h: any) => {
+                                const t = new Date(h.week).getTime();
+                                return t >= startOfWeek.getTime() && t <= endOfWeek.getTime();
+                              });
+                              return found ? found.score : null;
+                            };
+                            
+                            const s1 = getScore(w1);
+                            const s2 = getScore(w2);
+                            const s3 = getScore(w3);
+                            const s4 = getScore(w4);
+                            
+                            let bgClass = "bg-emerald-900/10 hover:bg-emerald-900/20";
+                            if (emp.missedWeeks === 1) bgClass = "bg-red-900/20 hover:bg-red-900/30";
+                            if (emp.missedWeeks === 2) bgClass = "bg-red-900/40 hover:bg-red-900/50";
+                            if (emp.missedWeeks >= 3) bgClass = "bg-red-900/60 hover:bg-red-900/70";
+
+                            return (
+                              <tr key={emp.id} className={`${bgClass} transition-colors`}>
+                                <td className="p-4 font-bold text-white">{emp.name}</td>
+                                <td className="p-4 text-slate-400">{emp.email}</td>
+                                <td className="p-4 text-center font-bold">{s1 !== null ? <span className="text-emerald-400">{s1}</span> : <span className="text-red-400/50">—</span>}</td>
+                                <td className="p-4 text-center font-bold">{s2 !== null ? <span className="text-emerald-400">{s2}</span> : <span className="text-red-400/50">—</span>}</td>
+                                <td className="p-4 text-center font-bold">{s3 !== null ? <span className="text-emerald-400">{s3}</span> : <span className="text-red-400/50">—</span>}</td>
+                                <td className="p-4 text-center font-bold">{s4 !== null ? <span className="text-emerald-400">{s4}</span> : <span className="text-red-400/50">—</span>}</td>
+                              </tr>
+                            );
+                          })}
+                        {(!deptDetails.employees || deptDetails.employees.length === 0) && (
+                          <tr>
+                            <td colSpan={6} className="p-8 text-center text-slate-500">No employees found in this department.</td>
                           </tr>
-                        ))}
+                        )}
                       </tbody>
                     </table>
                   </div>

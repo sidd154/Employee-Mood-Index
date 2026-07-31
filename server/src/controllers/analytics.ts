@@ -258,9 +258,15 @@ export const getDepartmentDetails = async (req: AuthenticatedRequest, res: Respo
          u.email,
          ROUND(AVG(m.mood_score), 1) as mood_index,
          COUNT(DISTINCT DATE_TRUNC('week', m.created_at)::date) as check_in_count,
-         MAX(m.created_at) as last_check_in
+         MAX(m.created_at) as last_check_in,
+         COALESCE(
+           JSON_AGG(
+             JSON_BUILD_OBJECT('week', DATE_TRUNC('week', m.created_at)::date, 'score', m.mood_score)
+           ) FILTER (WHERE m.id IS NOT NULL),
+           '[]'
+         ) as checkin_history
        FROM users u
-       LEFT JOIN mood_entries m ON m.user_id = u.id
+       LEFT JOIN mood_entries m ON m.user_id = u.id AND m.created_at >= DATE_TRUNC('year', NOW())
        WHERE u.department_id = $1 AND u.full_name IS NOT NULL
        GROUP BY u.id, u.full_name, u.email
        ORDER BY u.full_name ASC`,
@@ -273,11 +279,22 @@ export const getDepartmentDetails = async (req: AuthenticatedRequest, res: Respo
       distribution,
       topFeelings: feelings.rows,
       topContributors: contributors.rows,
-      employees: employees.rows.map(emp => ({
-        ...emp,
-        moodIndex: parseFloat(emp.mood_index || '0'),
-        checkInCount: parseInt(emp.check_in_count || '0'),
-      })),
+      employees: employees.rows.map(emp => {
+        const historySet = new Map<string, number>();
+        if (Array.isArray(emp.checkin_history)) {
+          emp.checkin_history.forEach((h: any) => {
+            if (h && h.week) historySet.set(h.week, h.score);
+          });
+        }
+        const uniqueHistory = Array.from(historySet.entries()).map(([week, score]) => ({ week, score }));
+
+        return {
+          ...emp,
+          moodIndex: parseFloat(emp.mood_index || '0'),
+          checkInCount: parseInt(emp.check_in_count || '0'),
+          checkinHistory: uniqueHistory,
+        };
+      }),
     });
   } catch (error: any) {
     console.error('Get department details error:', error);
