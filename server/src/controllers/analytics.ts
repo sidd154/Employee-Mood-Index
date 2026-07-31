@@ -261,7 +261,7 @@ export const getDepartmentDetails = async (req: AuthenticatedRequest, res: Respo
          MAX(m.created_at) as last_check_in,
          COALESCE(
            JSON_AGG(
-             JSON_BUILD_OBJECT('week', DATE_TRUNC('week', m.created_at)::date, 'score', m.mood_score)
+             JSON_BUILD_OBJECT('date', m.created_at, 'score', m.mood_score)
            ) FILTER (WHERE m.id IS NOT NULL),
            '[]'
          ) as checkin_history
@@ -280,19 +280,11 @@ export const getDepartmentDetails = async (req: AuthenticatedRequest, res: Respo
       topFeelings: feelings.rows,
       topContributors: contributors.rows,
       employees: employees.rows.map(emp => {
-        const historySet = new Map<string, number>();
-        if (Array.isArray(emp.checkin_history)) {
-          emp.checkin_history.forEach((h: any) => {
-            if (h && h.week) historySet.set(h.week, h.score);
-          });
-        }
-        const uniqueHistory = Array.from(historySet.entries()).map(([week, score]) => ({ week, score }));
-
         return {
           ...emp,
           moodIndex: parseFloat(emp.mood_index || '0'),
           checkInCount: parseInt(emp.check_in_count || '0'),
-          checkinHistory: uniqueHistory,
+          checkinHistory: Array.isArray(emp.checkin_history) ? emp.checkin_history : [],
         };
       }),
     });
@@ -333,7 +325,7 @@ export const getEmployeeExplorer = async (req: AuthenticatedRequest, res: Respon
          u.created_at,
          COALESCE(
            JSON_AGG(
-             JSON_BUILD_OBJECT('week', DATE_TRUNC('week', m.created_at)::date, 'score', m.mood_score)
+             JSON_BUILD_OBJECT('date', m.created_at, 'score', m.mood_score)
            ) FILTER (WHERE m.id IS NOT NULL),
            '[]'
          ) as checkin_history
@@ -354,15 +346,6 @@ export const getEmployeeExplorer = async (req: AuthenticatedRequest, res: Respon
       const weeksSinceLimit = Math.max(1, Math.ceil((Date.now() - dateLimit.getTime()) / (1000 * 60 * 60 * 24 * 7)));
       const participationRate = Math.min(Math.round((count / weeksSinceLimit) * 100), 100);
 
-      // Deduplicate history by week in case of multiple checkins
-      const historySet = new Map<string, number>();
-      if (Array.isArray(row.checkin_history)) {
-        row.checkin_history.forEach((h: any) => {
-          if (h && h.week) historySet.set(h.week, h.score);
-        });
-      }
-      const uniqueHistory = Array.from(historySet.entries()).map(([week, score]) => ({ week, score }));
-
       return {
         id: row.id,
         name: row.name,
@@ -370,7 +353,7 @@ export const getEmployeeExplorer = async (req: AuthenticatedRequest, res: Respon
         moodIndex: row.mood_index ? parseFloat(row.mood_index) : null,
         participationRate,
         lastCheckIn: row.last_check_in,
-        checkinHistory: uniqueHistory,
+        checkinHistory: Array.isArray(row.checkin_history) ? row.checkin_history : [],
       };
     });
 

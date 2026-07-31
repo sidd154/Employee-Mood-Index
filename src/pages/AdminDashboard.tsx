@@ -1207,7 +1207,7 @@ export const AdminDashboard: React.FC = () => {
                               let checkinsInRange = 0;
                               const history = Array.isArray(emp.checkinHistory) ? emp.checkinHistory : [];
                               history.forEach((h: any) => {
-                                const hTime = new Date(h.week).getTime();
+                                const hTime = new Date(h.date).getTime();
                                 if (hTime >= filterStart && hTime <= filterEnd) {
                                   checkinsInRange++;
                                 }
@@ -1235,7 +1235,7 @@ export const AdminDashboard: React.FC = () => {
                                 endOfWeek.setDate(endOfWeek.getDate() + 6);
                                 endOfWeek.setHours(23,59,59,999);
                                 const found = (emp.checkinHistory || []).find((h: any) => {
-                                  const t = new Date(h.week).getTime();
+                                  const t = new Date(h.date).getTime();
                                   return t >= startOfWeek.getTime() && t <= endOfWeek.getTime();
                                 });
                                 return found ? found.score : null;
@@ -1868,7 +1868,7 @@ export const AdminDashboard: React.FC = () => {
                             let checkinsInRange = 0;
                             const history = Array.isArray(emp.checkinHistory) ? emp.checkinHistory : [];
                             history.forEach((h: any) => {
-                              const hTime = new Date(h.week).getTime();
+                              const hTime = new Date(h.date).getTime();
                               if (hTime >= filterStart && hTime <= filterEnd) {
                                 checkinsInRange++;
                               }
@@ -1891,7 +1891,7 @@ export const AdminDashboard: React.FC = () => {
                               endOfWeek.setDate(endOfWeek.getDate() + 6);
                               endOfWeek.setHours(23,59,59,999);
                               const found = (emp.checkinHistory || []).find((h: any) => {
-                                const t = new Date(h.week).getTime();
+                                const t = new Date(h.date).getTime();
                                 return t >= startOfWeek.getTime() && t <= endOfWeek.getTime();
                               });
                               return found ? found.score : null;
