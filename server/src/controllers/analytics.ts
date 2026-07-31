@@ -286,20 +286,23 @@ export const getDepartmentDetails = async (req: AuthenticatedRequest, res: Respo
 };
 
 export const getEmployeeExplorer = async (req: AuthenticatedRequest, res: Response) => {
-  const { search, departmentId } = req.query;
+  const { search, departmentId, startDate, endDate } = req.query;
 
   try {
     let whereClause = `WHERE r.name = 'employee' AND u.full_name IS NOT NULL`;
     const params: any[] = [];
+    let paramIndex = 1;
 
     if (search) {
       params.push(`%${search}%`);
-      whereClause += ` AND (u.full_name ILIKE $${params.length} OR u.email ILIKE $${params.length})`;
+      whereClause += ` AND (u.full_name ILIKE $${paramIndex} OR u.email ILIKE $${paramIndex})`;
+      paramIndex++;
     }
 
     if (departmentId) {
       params.push(departmentId);
-      whereClause += ` AND u.department_id = $${params.length}`;
+      whereClause += ` AND u.department_id = $${paramIndex}`;
+      paramIndex++;
     }
 
     const employeesRes = await query(
@@ -310,7 +313,13 @@ export const getEmployeeExplorer = async (req: AuthenticatedRequest, res: Respon
          ROUND(AVG(m.mood_score), 1) as mood_index,
          MAX(m.created_at) as last_check_in,
          COUNT(DISTINCT DATE_TRUNC('week', m.created_at)::date) as check_ins_count,
-         u.created_at
+         u.created_at,
+         COALESCE(
+           JSON_AGG(
+             JSON_BUILD_OBJECT('week', DATE_TRUNC('week', m.created_at)::date, 'score', m.mood_score)
+           ) FILTER (WHERE m.id IS NOT NULL),
+           '[]'
+         ) as checkin_history
        FROM users u
        JOIN roles r ON u.role_id = r.id
        LEFT JOIN departments d ON u.department_id = d.id
@@ -328,6 +337,15 @@ export const getEmployeeExplorer = async (req: AuthenticatedRequest, res: Respon
       const weeksSinceLimit = Math.max(1, Math.ceil((Date.now() - dateLimit.getTime()) / (1000 * 60 * 60 * 24 * 7)));
       const participationRate = Math.min(Math.round((count / weeksSinceLimit) * 100), 100);
 
+      // Deduplicate history by week in case of multiple checkins
+      const historySet = new Map<string, number>();
+      if (Array.isArray(row.checkin_history)) {
+        row.checkin_history.forEach((h: any) => {
+          if (h && h.week) historySet.set(h.week, h.score);
+        });
+      }
+      const uniqueHistory = Array.from(historySet.entries()).map(([week, score]) => ({ week, score }));
+
       return {
         id: row.id,
         name: row.name,
@@ -335,6 +353,7 @@ export const getEmployeeExplorer = async (req: AuthenticatedRequest, res: Respon
         moodIndex: row.mood_index ? parseFloat(row.mood_index) : null,
         participationRate,
         lastCheckIn: row.last_check_in,
+        checkinHistory: uniqueHistory,
       };
     });
 

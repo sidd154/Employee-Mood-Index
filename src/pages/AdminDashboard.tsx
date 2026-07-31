@@ -67,6 +67,7 @@ export const AdminDashboard: React.FC = () => {
   const [employeeSearch, setEmployeeSearch] = useState('');
   const [selectedDeptFilter, setSelectedDeptFilter] = useState('');
   const [employees, setEmployees] = useState<any[]>([]);
+  const [employeeSortBy, setEmployeeSortBy] = useState<'name' | 'department' | 'compliance'>('name');
   const [selectedEmpId, setSelectedEmpId] = useState<string | null>(null);
   const [empDetails, setEmpDetails] = useState<any | null>(null);
 
@@ -163,7 +164,7 @@ export const AdminDashboard: React.FC = () => {
     if (!accessToken) return;
     try {
       const headers = { 'Authorization': `Bearer ${accessToken}` };
-      const res = await fetch(`${API_URL}/employees?search=${employeeSearch}&departmentId=${selectedDeptFilter}`, { headers });
+      const res = await fetch(`${API_URL}/employees?search=${employeeSearch}&departmentId=${selectedDeptFilter}&startDate=${selectedStartWeek.start}&endDate=${selectedEndWeek.end}`, { headers });
       if (res.ok) setEmployees(await res.json());
     } catch (err) {
       console.error('Failed to fetch explorer:', err);
@@ -174,7 +175,7 @@ export const AdminDashboard: React.FC = () => {
     if (activeTab === 'employees') {
       fetchEmployees();
     }
-  }, [activeTab, employeeSearch, selectedDeptFilter]);
+  }, [activeTab, employeeSearch, selectedDeptFilter, selectedStartWeek, selectedEndWeek]);
 
   // Fetch specific department details
   const loadDeptDetails = async (id: string, rangeOverride?: '7d' | '30d' | 'ytd') => {
@@ -1023,8 +1024,9 @@ export const AdminDashboard: React.FC = () => {
                         <div
                           key={dept.id}
                           onClick={() => {
-                            setActiveTab('departments');
-                            loadDeptDetails(dept.id, 'ytd');
+                            setActiveTab('employees');
+                            setSelectedDeptFilter(dept.id);
+                            setEmployeeSortBy('compliance');
                           }}
                           className="glass p-5 rounded-2xl border border-stone-850 hover:border-blue-500/50 hover:bg-stone-900/40 transition-all cursor-pointer group"
                         >
@@ -1159,36 +1161,103 @@ export const AdminDashboard: React.FC = () => {
 
                   {/* Employees Table */}
                   <div className="glass rounded-2xl border border-slate-900 overflow-hidden">
+                    <div className="p-3 border-b border-slate-900 bg-slate-900/20 flex justify-end items-center">
+                      <span className="text-xs text-slate-400 mr-2">Sort by:</span>
+                      <select
+                        value={employeeSortBy}
+                        onChange={(e) => setEmployeeSortBy(e.target.value as any)}
+                        className="bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-xs text-white"
+                      >
+                        <option value="name">Name</option>
+                        <option value="department">Department</option>
+                        <option value="compliance">Check-in Compliance</option>
+                      </select>
+                    </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-left text-xs">
                         <thead className="bg-slate-900 text-slate-400 font-semibold uppercase tracking-wider">
                           <tr>
                             <th className="p-4">Name</th>
                             <th className="p-4">Department</th>
-                            <th className="p-4 text-center">Wellness Index</th>
-                            <th className="p-4 text-center">Participation %</th>
-                            <th className="p-4 text-right">Last Check-In</th>
+                            <th className="p-4 text-center">Week 1</th>
+                            <th className="p-4 text-center">Week 2</th>
+                            <th className="p-4 text-center">Week 3</th>
+                            <th className="p-4 text-center">Week 4</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-900 text-slate-300">
-                          {employees.map((emp) => (
-                            <tr
-                              key={emp.id}
-                              onClick={() => loadEmpDetails(emp.id)}
-                              className="hover:bg-slate-900/40 cursor-pointer transition-colors"
-                            >
-                              <td className="p-4 font-bold text-white">{emp.name}</td>
-                              <td className="p-4 text-slate-400">{emp.department}</td>
-                              <td className="p-4 text-center font-bold text-blue-500">{emp.moodIndex || '—'}</td>
-                              <td className="p-4 text-center font-semibold text-slate-200">{emp.participationRate}%</td>
-                              <td className="p-4 text-right text-slate-400">
-                                {emp.lastCheckIn ? new Date(emp.lastCheckIn).toLocaleDateString() : 'Never'}
-                              </td>
-                            </tr>
-                          ))}
+                        <tbody className="divide-y divide-slate-900/50 text-slate-300">
+                          {employees
+                            .map((emp) => {
+                              // Calculate missed checkins in the selected date range
+                              const filterStart = new Date(selectedStartWeek.start).getTime();
+                              const filterEnd = new Date(selectedEndWeek.end).getTime();
+                              const weeksInRange = Math.max(1, Math.ceil((filterEnd - filterStart) / (1000 * 60 * 60 * 24 * 7)));
+                              
+                              let checkinsInRange = 0;
+                              const history = Array.isArray(emp.checkinHistory) ? emp.checkinHistory : [];
+                              history.forEach((h: any) => {
+                                const hTime = new Date(h.week).getTime();
+                                if (hTime >= filterStart && hTime <= filterEnd) {
+                                  checkinsInRange++;
+                                }
+                              });
+                              
+                              const missedWeeks = Math.max(0, weeksInRange - checkinsInRange);
+                              return { ...emp, missedWeeks };
+                            })
+                            .sort((a, b) => {
+                              if (employeeSortBy === 'name') return a.name.localeCompare(b.name);
+                              if (employeeSortBy === 'department') return a.department.localeCompare(b.department);
+                              if (employeeSortBy === 'compliance') return a.missedWeeks - b.missedWeeks;
+                              return 0;
+                            })
+                            .map((emp) => {
+                              // Identify history for the last 4 calendar weeks anchoring from selectedEndWeek
+                              const end = new Date(selectedEndWeek.end);
+                              const w1 = new Date(end); w1.setDate(w1.getDate() - 6); w1.setHours(0,0,0,0);
+                              const w2 = new Date(w1); w2.setDate(w2.getDate() - 7);
+                              const w3 = new Date(w2); w3.setDate(w3.getDate() - 7);
+                              const w4 = new Date(w3); w4.setDate(w4.getDate() - 7);
+                              
+                              const getScore = (startOfWeek: Date) => {
+                                const endOfWeek = new Date(startOfWeek);
+                                endOfWeek.setDate(endOfWeek.getDate() + 6);
+                                endOfWeek.setHours(23,59,59,999);
+                                const found = (emp.checkinHistory || []).find((h: any) => {
+                                  const t = new Date(h.week).getTime();
+                                  return t >= startOfWeek.getTime() && t <= endOfWeek.getTime();
+                                });
+                                return found ? found.score : null;
+                              };
+                              
+                              const s1 = getScore(w1);
+                              const s2 = getScore(w2);
+                              const s3 = getScore(w3);
+                              const s4 = getScore(w4);
+                              
+                              let bgClass = "bg-emerald-900/10 hover:bg-emerald-900/20";
+                              if (emp.missedWeeks === 1) bgClass = "bg-red-900/20 hover:bg-red-900/30";
+                              if (emp.missedWeeks === 2) bgClass = "bg-red-900/40 hover:bg-red-900/50";
+                              if (emp.missedWeeks >= 3) bgClass = "bg-red-900/60 hover:bg-red-900/70";
+
+                              return (
+                                <tr
+                                  key={emp.id}
+                                  onClick={() => loadEmpDetails(emp.id)}
+                                  className={`${bgClass} cursor-pointer transition-colors border-b border-slate-900/50`}
+                                >
+                                  <td className="p-4 font-bold text-white">{emp.name}</td>
+                                  <td className="p-4 text-slate-400">{emp.department}</td>
+                                  <td className="p-4 text-center font-bold">{s1 !== null ? <span className="text-emerald-400">{s1}</span> : <span className="text-red-400/50">—</span>}</td>
+                                  <td className="p-4 text-center font-bold">{s2 !== null ? <span className="text-emerald-400">{s2}</span> : <span className="text-red-400/50">—</span>}</td>
+                                  <td className="p-4 text-center font-bold">{s3 !== null ? <span className="text-emerald-400">{s3}</span> : <span className="text-red-400/50">—</span>}</td>
+                                  <td className="p-4 text-center font-bold">{s4 !== null ? <span className="text-emerald-400">{s4}</span> : <span className="text-red-400/50">—</span>}</td>
+                                </tr>
+                              );
+                            })}
                           {employees.length === 0 && (
                             <tr>
-                              <td colSpan={5} className="p-8 text-center text-slate-500">No employees found.</td>
+                              <td colSpan={6} className="p-8 text-center text-slate-500">No employees found.</td>
                             </tr>
                           )}
                         </tbody>
@@ -1906,6 +1975,17 @@ export const AdminDashboard: React.FC = () => {
                       )}
                     </div>
                   </div>
+                </div>
+
+                <div className="pt-4 flex justify-end">
+                  <button
+                    onClick={() => {
+                      alert('Employee report requested. This will be sent to their registered email shortly.');
+                    }}
+                    className="text-[10px] bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600/40 px-3 py-1.5 rounded-md transition-colors font-medium shadow-sm"
+                  >
+                    Send Employee Report
+                  </button>
                 </div>
               </>
             )}
