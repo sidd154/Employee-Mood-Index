@@ -717,12 +717,12 @@ export const AdminDashboard: React.FC = () => {
       </header>
 
       {/* Main Layout */}
-      <div className="flex-1 flex">
+      <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
         {/* Left Sidebar */}
-        <aside className="w-64 border-r border-stone-800 bg-stone-950 p-6 flex flex-col gap-1.5">
+        <aside className="w-full md:w-64 border-b md:border-b-0 md:border-r border-stone-800 bg-stone-950 p-4 md:p-6 flex flex-row md:flex-col gap-2 overflow-x-auto flex-shrink-0">
           <button
             onClick={() => setActiveTab('overview')}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all ${
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all whitespace-nowrap ${
               activeTab === 'overview' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-stone-400 hover:bg-stone-900 hover:text-stone-200'
             }`}
           >
@@ -730,7 +730,7 @@ export const AdminDashboard: React.FC = () => {
           </button>
           <button
             onClick={() => setActiveTab('departments')}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all ${
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all whitespace-nowrap ${
               activeTab === 'departments' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-stone-400 hover:bg-stone-900 hover:text-stone-200'
             }`}
           >
@@ -738,7 +738,7 @@ export const AdminDashboard: React.FC = () => {
           </button>
           <button
             onClick={() => setActiveTab('employees')}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all ${
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all whitespace-nowrap ${
               activeTab === 'employees' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-stone-400 hover:bg-stone-900 hover:text-stone-200'
             }`}
           >
@@ -746,7 +746,7 @@ export const AdminDashboard: React.FC = () => {
           </button>
           <button
             onClick={() => setActiveTab('reports')}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all ${
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all whitespace-nowrap ${
               activeTab === 'reports' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-stone-400 hover:bg-stone-900 hover:text-stone-200'
             }`}
           >
@@ -757,7 +757,7 @@ export const AdminDashboard: React.FC = () => {
               <div className="h-px bg-stone-850 my-4" />
               <button
                 onClick={() => setActiveTab('users')}
-                className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all ${
+                className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all whitespace-nowrap ${
                   activeTab === 'users' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-stone-400 hover:bg-stone-900 hover:text-stone-200'
                 }`}
               >
@@ -765,7 +765,7 @@ export const AdminDashboard: React.FC = () => {
               </button>
               <button
                 onClick={() => setActiveTab('settings')}
-                className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all ${
+                className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all whitespace-nowrap ${
                   activeTab === 'settings' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-stone-400 hover:bg-stone-900 hover:text-stone-200'
                 }`}
               >
@@ -776,24 +776,24 @@ export const AdminDashboard: React.FC = () => {
         </aside>
 
         {/* Dashboard Main Workspace */}
-        <main className="flex-1 bg-stone-900 p-8 overflow-y-auto">
+        <main className="flex-1 bg-stone-900 p-4 md:p-8 overflow-y-auto">
           {loading ? (
             <div className="h-[400px] flex items-center justify-center">
               <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
             </div>
           ) : (
-            <div className="max-w-6xl mx-auto space-y-8 animate-fade-in">
+            <div className="max-w-6xl mx-auto space-y-6 md:space-y-8 animate-fade-in">
 
               {/* TAB 1: OVERVIEW */}
               {activeTab === 'overview' && (
                 <>
                   {/* Top Bar with Time Filters */}
-                  <div className="flex justify-between items-center bg-stone-950 p-4 rounded-2xl border border-stone-850">
+                  <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 bg-stone-950 p-4 rounded-2xl border border-stone-850">
                     <div>
                       <h2 className="text-xl font-bold text-white">Weekly Analysis</h2>
                       <p className="text-xs text-stone-400 mt-1">Metrics and department breakdown for the selected week</p>
                     </div>
-                    <div className="flex gap-4 items-center">
+                    <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center w-full xl:w-auto">
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-stone-400">From:</span>
                         <select
@@ -835,7 +835,7 @@ export const AdminDashboard: React.FC = () => {
                   </div>
 
                   {/* KPI Cards Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
                     <div className="glass p-6 rounded-2xl border border-stone-850 hover:border-stone-700 transition-all cursor-pointer">
                       <p className="text-xs font-bold text-stone-400 uppercase tracking-wider">Overall Wellness Index</p>
                       <h3 className="text-4xl font-extrabold text-blue-500 mt-3">{stats.moodIndex}</h3>
@@ -1066,12 +1066,12 @@ export const AdminDashboard: React.FC = () => {
               {/* TAB 2: DEPARTMENTS */}
               {activeTab === 'departments' && (
                 <div className="space-y-6">
-                  <div className="flex justify-between items-center bg-stone-950 p-4 rounded-2xl border border-stone-850">
+                  <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 bg-stone-950 p-4 rounded-2xl border border-stone-850">
                     <div>
                       <h2 className="text-xl font-bold text-white">Department breakdown</h2>
                       <p className="text-xs text-slate-400 mt-1">Metrics filtered by the selected week(s)</p>
                     </div>
-                    <div className="flex gap-4 items-center">
+                    <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center w-full xl:w-auto">
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-stone-400">From:</span>
                         <select
@@ -1150,7 +1150,7 @@ export const AdminDashboard: React.FC = () => {
                   </div>
 
                   {/* Filters Bar */}
-                  <div className="flex gap-4">
+                  <div className="flex flex-col sm:flex-row gap-4">
                     <input
                       type="text"
                       placeholder="Search employees..."
@@ -2091,7 +2091,7 @@ export const AdminDashboard: React.FC = () => {
               Check-ins scored with this rating are highly associated with the following indicators:
             </p>
             
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               <div>
                 <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">Associated Feelings</h4>
                 <div className="space-y-1 bg-slate-950 p-3 rounded-xl border border-slate-900 max-h-[160px] overflow-y-auto">
