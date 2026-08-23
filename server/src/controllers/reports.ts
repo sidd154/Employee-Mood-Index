@@ -314,6 +314,69 @@ export const buildAndEmailAdminReport = async (userId: string, userEmail: string
     filterValues
   );
 
+  const employeesRes = await query(
+    `SELECT 
+       u.id, 
+       u.full_name as name, 
+       u.email, 
+       COALESCE(d.name, 'Unassigned') as department,
+       ROUND(AVG(m.mood_score), 1) as overall_avg,
+       COALESCE(
+         JSON_AGG(
+           JSON_BUILD_OBJECT('date', m.created_at, 'score', m.mood_score)
+         ) FILTER (WHERE m.id IS NOT NULL AND m.created_at >= NOW() - INTERVAL '5 weeks'),
+         '[]'
+       ) as recent_history
+     FROM users u
+     JOIN roles r ON u.role_id = r.id
+     LEFT JOIN departments d ON u.department_id = d.id
+     LEFT JOIN mood_entries m ON m.user_id = u.id
+     WHERE r.name = 'employee' AND u.full_name IS NOT NULL
+     GROUP BY u.id, u.full_name, u.email, d.name
+     ORDER BY department ASC, u.full_name ASC`
+  );
+
+  const now = endDate ? new Date(endDate) : new Date();
+  const currentWeekStart = new Date(now);
+  const day = currentWeekStart.getDay(); // 0=Sun...5=Fri,6=Sat
+  let diff = 0;
+  if (day === 5) diff = 0;
+  else if (day === 6) diff = -1;
+  else diff = -(day + 2);
+  
+  currentWeekStart.setDate(currentWeekStart.getDate() + diff);
+  currentWeekStart.setHours(0, 0, 0, 0);
+
+  const w1 = new Date(currentWeekStart); // newest
+  const w2 = new Date(w1); w2.setDate(w2.getDate() - 7);
+  const w3 = new Date(w2); w3.setDate(w3.getDate() - 7);
+  const w4 = new Date(w3); w4.setDate(w4.getDate() - 7); // oldest
+
+  const getScore = (history: any[], startOfWeek: Date) => {
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(endOfWeek.getDate() + 6);
+    endOfWeek.setHours(23, 59, 59, 999);
+    const found = history.find((h: any) => {
+      const t = new Date(h.date).getTime();
+      return t >= startOfWeek.getTime() && t <= endOfWeek.getTime();
+    });
+    return found ? found.score : null;
+  };
+
+  const employeeDetails = employeesRes.rows.map((row: any) => {
+    const hist = Array.isArray(row.recent_history) ? row.recent_history : [];
+    return {
+      name: row.name,
+      email: row.email,
+      department: row.department,
+      overallAvg: row.overall_avg ? parseFloat(row.overall_avg) : null,
+      week4: getScore(hist, w4),
+      week3: getScore(hist, w3),
+      week2: getScore(hist, w2),
+      week1: getScore(hist, w1),
+    };
+  });
+
   let reportBuffer: Buffer;
   let filename = '';
 
@@ -348,6 +411,7 @@ export const buildAndEmailAdminReport = async (userId: string, userEmail: string
         count: parseInt(row.count),
         moodCorrelation: parseFloat(row.avg_mood),
       })),
+      employeeDetails
     });
   } else {
     filename = `Admin_Wellness_Report_${range}.csv`;
@@ -372,6 +436,11 @@ export const buildAndEmailAdminReport = async (userId: string, userEmail: string
     csvText += `\nTop Contributors\nContributor,Count,Wellness Correlation\n`;
     contRes.rows.forEach((c) => {
       csvText += `${c.name},${c.count},${c.avg_mood}\n`;
+    });
+
+    csvText += `\nEmployee Details by Department\nDepartment,Name,Email,Overall Avg,Week 4 (Oldest),Week 3,Week 2,Week 1 (Newest)\n`;
+    employeeDetails.forEach((emp) => {
+      csvText += `"${emp.department}","${emp.name}","${emp.email}",${emp.overallAvg || '—'},${emp.week4 || '—'},${emp.week3 || '—'},${emp.week2 || '—'},${emp.week1 || '—'}\n`;
     });
 
     reportBuffer = Buffer.from(csvText, 'utf-8');
