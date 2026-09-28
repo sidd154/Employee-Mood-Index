@@ -2331,6 +2331,104 @@ export const AdminDashboard: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Advanced Export Modal */}
+      {showExportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-stone-900 border border-stone-800 rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="p-6 border-b border-stone-800 flex justify-between items-center shrink-0">
+              <h3 className="text-lg font-bold text-white">Advanced Report Export</h3>
+              <button onClick={() => setShowExportModal(false)} className="text-stone-400 hover:text-white p-2">
+                ✕
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-6 overflow-y-auto grow custom-scrollbar">
+              
+              {/* 1. Format */}
+              <div className="space-y-3">
+                <label className="block text-[10px] font-bold text-stone-500 uppercase tracking-wider">File Format</label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 text-xs text-stone-300 cursor-pointer">
+                    <input type="radio" name="em_format" checked={exportModalState.format === 'pdf'} onChange={() => setExportModalState({...exportModalState, format: 'pdf'})} className="accent-blue-500" />
+                    PDF Executive Summary
+                  </label>
+                  <label className="flex items-center gap-2 text-xs text-stone-300 cursor-pointer">
+                    <input type="radio" name="em_format" checked={exportModalState.format === 'csv'} onChange={() => setExportModalState({...exportModalState, format: 'csv'})} className="accent-blue-500" />
+                    CSV Raw Dataset
+                  </label>
+                </div>
+              </div>
+
+              {/* 2. Target Audience (Who) */}
+              <div className="space-y-3">
+                <label className="block text-[10px] font-bold text-stone-500 uppercase tracking-wider">Target Data</label>
+                <select
+                  value={exportModalState.departments}
+                  onChange={(e) => setExportModalState({...exportModalState, departments: e.target.value, deptId: ''})}
+                  className="w-full bg-stone-950 border border-stone-800 rounded-xl px-4 py-2 text-xs text-white"
+                >
+                  <option value="all">Entire Organization</option>
+                  <option value="specific">Specific Department</option>
+                </select>
+                
+                {exportModalState.departments === 'specific' && (
+                  <select
+                    value={exportModalState.deptId}
+                    onChange={(e) => setExportModalState({...exportModalState, deptId: e.target.value})}
+                    className="w-full bg-stone-950 border border-stone-800 rounded-xl px-4 py-2 text-xs text-white mt-2"
+                  >
+                    <option value="" disabled>Select Department...</option>
+                    {departments.map((d: any) => (
+                      <option key={d.id} value={d.name}>{d.name}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              {/* 3. Sections to Include */}
+              <div className="space-y-3">
+                <label className="block text-[10px] font-bold text-stone-500 uppercase tracking-wider">Sections to Include</label>
+                <div className="space-y-2 bg-stone-950/50 p-4 rounded-xl border border-stone-800/50">
+                  <label className="flex items-center gap-3 text-xs text-stone-300 cursor-pointer">
+                    <input type="checkbox" checked={exportModalState.sections.summary} onChange={(e) => setExportModalState({...exportModalState, sections: {...exportModalState.sections, summary: e.target.checked}})} className="accent-blue-500 rounded" />
+                    Overall Executive Summary
+                  </label>
+                  <label className="flex items-center gap-3 text-xs text-stone-300 cursor-pointer">
+                    <input type="checkbox" checked={exportModalState.sections.trends} onChange={(e) => setExportModalState({...exportModalState, sections: {...exportModalState.sections, trends: e.target.checked}})} className="accent-blue-500 rounded" />
+                    Trends & Analytics
+                  </label>
+                  <label className="flex items-center gap-3 text-xs text-stone-300 cursor-pointer">
+                    <input type="checkbox" checked={exportModalState.sections.departments} onChange={(e) => setExportModalState({...exportModalState, sections: {...exportModalState.sections, departments: e.target.checked}})} className="accent-blue-500 rounded" />
+                    Department Breakdowns
+                  </label>
+                  <label className="flex items-center gap-3 text-xs text-stone-300 cursor-pointer">
+                    <input type="checkbox" checked={exportModalState.sections.employees} onChange={(e) => setExportModalState({...exportModalState, sections: {...exportModalState.sections, employees: e.target.checked}})} className="accent-blue-500 rounded" />
+                    Employee-Level Detail Tables
+                  </label>
+                </div>
+              </div>
+
+            </div>
+
+            <div className="p-6 border-t border-stone-800 flex justify-end gap-3 shrink-0">
+              <button
+                onClick={() => setShowExportModal(false)}
+                className="px-4 py-2 text-xs font-semibold text-stone-400 hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleExportModalSubmit}
+                disabled={exportingWeek || (exportModalState.departments === 'specific' && !exportModalState.deptId)}
+                className="bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 text-white px-6 py-2 rounded-xl text-xs font-bold transition-all"
+              >
+                {exportingWeek ? 'Generating...' : 'Email Report'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
