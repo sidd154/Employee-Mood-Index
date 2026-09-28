@@ -1202,24 +1202,71 @@ export const AdminDashboard: React.FC = () => {
                   </div>
 
                   {/* Filters Bar */}
-                  <div className="flex flex-col sm:flex-row gap-4">
-                    <input
-                      type="text"
-                      placeholder="Search employees..."
-                      value={employeeSearch}
-                      onChange={(e) => setEmployeeSearch(e.target.value)}
-                      className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-blue-500"
-                    />
-                    <select
-                      value={selectedDeptFilter}
-                      onChange={(e) => setSelectedDeptFilter(e.target.value)}
-                      className="bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white cursor-pointer"
-                    >
-                      <option value="">All Departments</option>
-                      {departments.map((d) => (
-                        <option key={d.id} value={d.id}>{d.name}</option>
-                      ))}
-                    </select>
+                  <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 bg-stone-950 p-4 rounded-2xl border border-stone-850">
+                    <div className="flex flex-col sm:flex-row gap-4 w-full xl:w-auto">
+                      <input
+                        type="text"
+                        placeholder="Search employees..."
+                        value={employeeSearch}
+                        onChange={(e) => setEmployeeSearch(e.target.value)}
+                        className="w-full sm:w-64 bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-blue-500"
+                      />
+                      <select
+                        value={selectedDeptFilter}
+                        onChange={(e) => setSelectedDeptFilter(e.target.value)}
+                        className="bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white cursor-pointer"
+                      >
+                        <option value="">All Departments</option>
+                        {departments.map((d) => (
+                          <option key={d.id} value={d.id}>{d.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    
+                      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center w-full xl:w-auto">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-stone-400">Group By:</span>
+                          <select
+                            value={groupBy}
+                            onChange={(e) => setGroupBy(e.target.value as 'weeks' | 'months')}
+                            className="bg-stone-900 border border-stone-800 rounded-xl px-3 py-2 text-xs text-white cursor-pointer hover:border-stone-700"
+                          >
+                            <option value="weeks">Weeks</option>
+                            <option value="months">Months</option>
+                          </select>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-stone-400">From:</span>
+                          <select
+                            value={selectedStartPeriod.start}
+                            onChange={(e) => {
+                              const w = periods.find((rw) => rw.start === e.target.value);
+                              if (w) setSelectedStartPeriod(w);
+                            }}
+                            className="bg-stone-900 border border-stone-800 rounded-xl px-3 py-2 text-xs text-white cursor-pointer hover:border-stone-700"
+                          >
+                            {periods.map((w) => (
+                              <option key={w.start} value={w.start}>{w.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-stone-400">To:</span>
+                          <select
+                            value={selectedEndPeriod.end}
+                            onChange={(e) => {
+                              const w = periods.find((rw) => rw.end === e.target.value);
+                              if (w) setSelectedEndPeriod(w);
+                            }}
+                            className="bg-stone-900 border border-stone-800 rounded-xl px-3 py-2 text-xs text-white cursor-pointer hover:border-stone-700"
+                          >
+                            {periods.map((w) => (
+                              <option key={w.end} value={w.end}>{w.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
                   </div>
 
                   {/* Employees Table */}
