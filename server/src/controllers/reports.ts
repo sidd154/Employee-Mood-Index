@@ -409,10 +409,10 @@ export const buildAndEmailAdminReport = async (userId: string, userEmail: string
   
   const reportPeriods = periods.slice(eIdx, sIdx + 1).reverse();
 
-  const getScore = (history, startIso, endIso) => {
+  const getScore = (history: any[], startIso: string, endIso: string) => {
     const s = new Date(startIso).getTime();
     const e = new Date(endIso).getTime();
-    const found = history.find(h => {
+    const found = history.find((h: any) => {
       const t = new Date(h.date).getTime();
       return t >= s && t <= e;
     });
