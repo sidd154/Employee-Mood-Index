@@ -315,6 +315,12 @@ export const generateAdminReportPDF = (
       scores: (number | null)[];
     }[];
     reportPeriods?: { label: string; start: string; end: string }[];
+    sections?: {
+      summary: boolean;
+      departments: boolean;
+      employees: boolean;
+      trends: boolean;
+    };
   }
 ): Promise<Buffer> => {
   return new Promise((resolve, reject) => {
@@ -355,76 +361,87 @@ export const generateAdminReportPDF = (
     doc.strokeColor(gridColor).lineWidth(1).moveTo(50, 105).lineTo(545, 105).stroke();
     doc.moveDown(1.5);
 
-    // KPI Cards Block (Three columns)
-    const kpiY = 125;
-    const cardWidth = 155;
-    const cardHeight = 85;
-
-    // Card Backgrounds
-    doc.roundedRect(50, kpiY, cardWidth, cardHeight, 6).fillAndStroke(lightGray, gridColor);
-    doc.roundedRect(220, kpiY, cardWidth, cardHeight, 6).fillAndStroke(lightGray, gridColor);
-    doc.roundedRect(390, kpiY, cardWidth, cardHeight, 6).fillAndStroke(lightGray, gridColor);
-
-    // Card 1
-    doc.fillColor(secondaryColor).font('Helvetica-Bold').fontSize(7.5).text('COMPANY MOOD INDEX', 58, kpiY + 12);
-    doc.fillColor(accentColor).font('Helvetica-Bold').fontSize(24).text(`${data.moodIndex.toFixed(1)}`, 58, kpiY + 24);
     
-    // Add sub-trends inside Card 1 (e.g. This Month / Last Month / Overall)
-    doc.fillColor(secondaryColor).font('Helvetica').fontSize(6.5);
-    doc.text(`This Month: ${data.thisMonthAvg ? data.thisMonthAvg.toFixed(1) : '—'}`, 122, kpiY + 22);
-    doc.text(`Last Month: ${data.lastMonthAvg ? data.lastMonthAvg.toFixed(1) : '—'}`, 122, kpiY + 36);
-    doc.text(`Overall: ${data.overallAvg ? data.overallAvg.toFixed(1) : '—'}`, 122, kpiY + 50);
-
-    const companyLvl = getMoodStatus(data.moodIndex);
-    doc.fillColor(companyLvl.color).font('Helvetica-Bold').fontSize(7.5).text(companyLvl.label, 58, kpiY + 58);
-
-    // Card 2
-    doc.fillColor(secondaryColor).font('Helvetica-Bold').fontSize(7.5).text('PARTICIPATION RATE', 230, kpiY + 12);
-    doc.fillColor(primaryColor).font('Helvetica-Bold').fontSize(26).text(`${data.participationRate}%`, 230, kpiY + 24);
-    doc.fillColor(secondaryColor).font('Helvetica').fontSize(8.5).text(`${data.totalEmployees} Active Members`, 230, kpiY + 58);
-
-    // Card 3
-    doc.fillColor(secondaryColor).font('Helvetica-Bold').fontSize(7.5).text('TOTAL SUBMISSIONS', 400, kpiY + 12);
-    doc.fillColor(primaryColor).font('Helvetica-Bold').fontSize(26).text(`${data.checkinsCount}`, 400, kpiY + 24);
-    doc.fillColor(secondaryColor).font('Helvetica').fontSize(8.5).text('Completed Check-Ins', 400, kpiY + 58);
-
-    doc.y = kpiY + 105;
-
-    // Department Breakdown Table
-    doc.fillColor(primaryColor).font('Helvetica-Bold').fontSize(12).text('Departmental Breakdown', 50);
-    doc.fillColor(secondaryColor).font('Helvetica').fontSize(8).text('Wellbeing rating trends and headcount analysis by department', 50);
-    doc.moveDown(0.5);
-
-    const tblHeaderY = doc.y;
-    doc.fillColor(secondaryColor).font('Helvetica-Bold').fontSize(8);
-    doc.text('Department', 55, tblHeaderY);
-    doc.text('This Month', 210, tblHeaderY);
-    doc.text('Last Month', 300, tblHeaderY);
-    doc.text('Overall Avg', 390, tblHeaderY);
-    doc.text('Participation', 480, tblHeaderY);
-
-    doc.strokeColor(gridColor).lineWidth(0.8).moveTo(50, tblHeaderY + 14).lineTo(545, tblHeaderY + 14).stroke();
-
-    let rowY = tblHeaderY + 20;
-    
-    if (data.departments.length === 0) {
-      doc.fillColor(secondaryColor).font('Helvetica').fontSize(9).text('No department check-ins recorded.', 55, rowY);
-      rowY += 18;
-    } else {
-      data.departments.forEach((dept, index) => {
-        // Draw zebra stripe
-        if (index % 2 === 0) {
-          doc.fillColor('#fafafa').rect(50, rowY - 4, 495, 18).fill();
-        }
-        
-        doc.fillColor(primaryColor).font('Helvetica-Bold').fontSize(8.5).text(dept.name, 55, rowY);
-        doc.fillColor(accentColor).text(dept.thisMonthAvg ? dept.thisMonthAvg.toFixed(1) : '—', 210, rowY);
-        doc.fillColor(primaryColor).font('Helvetica').text(dept.lastMonthAvg ? dept.lastMonthAvg.toFixed(1) : '—', 300, rowY);
-        doc.fillColor(primaryColor).text(dept.overallAvg ? dept.overallAvg.toFixed(1) : '—', 390, rowY);
-        doc.fillColor(secondaryColor).text(`${dept.checkedIn} / ${dept.headcount} people`, 480, rowY);
-        rowY += 18;
-      });
+    let rowY = doc.y;
+    if (!data.sections || data.sections.summary !== false) {
+      // KPI Cards Block (Three columns)
+          const kpiY = 125;
+          const cardWidth = 155;
+          const cardHeight = 85;
+      
+          // Card Backgrounds
+          doc.roundedRect(50, kpiY, cardWidth, cardHeight, 6).fillAndStroke(lightGray, gridColor);
+          doc.roundedRect(220, kpiY, cardWidth, cardHeight, 6).fillAndStroke(lightGray, gridColor);
+          doc.roundedRect(390, kpiY, cardWidth, cardHeight, 6).fillAndStroke(lightGray, gridColor);
+      
+          // Card 1
+          doc.fillColor(secondaryColor).font('Helvetica-Bold').fontSize(7.5).text('COMPANY MOOD INDEX', 58, kpiY + 12);
+          doc.fillColor(accentColor).font('Helvetica-Bold').fontSize(24).text(`${data.moodIndex.toFixed(1)}`, 58, kpiY + 24);
+          
+          // Add sub-trends inside Card 1 (e.g. This Month / Last Month / Overall)
+          doc.fillColor(secondaryColor).font('Helvetica').fontSize(6.5);
+          doc.text(`This Month: ${data.thisMonthAvg ? data.thisMonthAvg.toFixed(1) : '—'}`, 122, kpiY + 22);
+          doc.text(`Last Month: ${data.lastMonthAvg ? data.lastMonthAvg.toFixed(1) : '—'}`, 122, kpiY + 36);
+          doc.text(`Overall: ${data.overallAvg ? data.overallAvg.toFixed(1) : '—'}`, 122, kpiY + 50);
+      
+          const companyLvl = getMoodStatus(data.moodIndex);
+          doc.fillColor(companyLvl.color).font('Helvetica-Bold').fontSize(7.5).text(companyLvl.label, 58, kpiY + 58);
+      
+          // Card 2
+          doc.fillColor(secondaryColor).font('Helvetica-Bold').fontSize(7.5).text('PARTICIPATION RATE', 230, kpiY + 12);
+          doc.fillColor(primaryColor).font('Helvetica-Bold').fontSize(26).text(`${data.participationRate}%`, 230, kpiY + 24);
+          doc.fillColor(secondaryColor).font('Helvetica').fontSize(8.5).text(`${data.totalEmployees} Active Members`, 230, kpiY + 58);
+      
+          // Card 3
+          doc.fillColor(secondaryColor).font('Helvetica-Bold').fontSize(7.5).text('TOTAL SUBMISSIONS', 400, kpiY + 12);
+          doc.fillColor(primaryColor).font('Helvetica-Bold').fontSize(26).text(`${data.checkinsCount}`, 400, kpiY + 24);
+          doc.fillColor(secondaryColor).font('Helvetica').fontSize(8.5).text('Completed Check-Ins', 400, kpiY + 58);
+      
+          doc.y = kpiY + 105;
+      
+          
+      rowY = kpiY + 105;
+      doc.y = rowY;
     }
+
+    if (!data.sections || data.sections.departments !== false) {
+      // Department Breakdown Table
+          doc.fillColor(primaryColor).font('Helvetica-Bold').fontSize(12).text('Departmental Breakdown', 50);
+          doc.fillColor(secondaryColor).font('Helvetica').fontSize(8).text('Wellbeing rating trends and headcount analysis by department', 50);
+          doc.moveDown(0.5);
+      
+          const tblHeaderY = doc.y;
+          doc.fillColor(secondaryColor).font('Helvetica-Bold').fontSize(8);
+          doc.text('Department', 55, tblHeaderY);
+          doc.text('This Month', 210, tblHeaderY);
+          doc.text('Last Month', 300, tblHeaderY);
+          doc.text('Overall Avg', 390, tblHeaderY);
+          doc.text('Participation', 480, tblHeaderY);
+      
+          doc.strokeColor(gridColor).lineWidth(0.8).moveTo(50, tblHeaderY + 14).lineTo(545, tblHeaderY + 14).stroke();
+      
+          let rowY = tblHeaderY + 20;
+          
+          if (data.departments.length === 0) {
+            doc.fillColor(secondaryColor).font('Helvetica').fontSize(9).text('No department check-ins recorded.', 55, rowY);
+            rowY += 18;
+          } else {
+            data.departments.forEach((dept, index) => {
+              // Draw zebra stripe
+              if (index % 2 === 0) {
+                doc.fillColor('#fafafa').rect(50, rowY - 4, 495, 18).fill();
+              }
+              
+              doc.fillColor(primaryColor).font('Helvetica-Bold').fontSize(8.5).text(dept.name, 55, rowY);
+              doc.fillColor(accentColor).text(dept.thisMonthAvg ? dept.thisMonthAvg.toFixed(1) : '—', 210, rowY);
+              doc.fillColor(primaryColor).font('Helvetica').text(dept.lastMonthAvg ? dept.lastMonthAvg.toFixed(1) : '—', 300, rowY);
+              doc.fillColor(primaryColor).text(dept.overallAvg ? dept.overallAvg.toFixed(1) : '—', 390, rowY);
+              doc.fillColor(secondaryColor).text(`${dept.checkedIn} / ${dept.headcount} people`, 480, rowY);
+              rowY += 18;
+            });
+          }
+    }
+
 
     doc.y = rowY + 15;
 
@@ -537,80 +554,84 @@ export const generateAdminReportPDF = (
     // Footer Page 2
     doc.fillColor('#94a3b8').fontSize(7.5).text('Generated by Employee Wellness Index • Page 2 of 2', 50, 760, { align: 'center' });
 
-    // --- PAGE 3+: EMPLOYEE DETAILS BY DEPARTMENT ---
-    if (data.employeeDetails && data.employeeDetails.length > 0) {
-      type EmpList = NonNullable<typeof data.employeeDetails>;
-      const byDept = data.employeeDetails.reduce((acc, emp) => {
-        if (!acc[emp.department]) acc[emp.department] = [];
-        acc[emp.department].push(emp);
-        return acc;
-      }, {} as Record<string, EmpList>);
-
-      for (const dept of Object.keys(byDept).sort()) {
-        doc.addPage();
-        doc.fillColor(accentColor).rect(50, 45, 8, 25).fill();
-        doc.fillColor(primaryColor).font('Helvetica-Bold').fontSize(16).text(`Employee Details: ${dept}`, 68, 47);
-        doc.moveDown(1.5);
-
-        let tblHeaderY = doc.y;
-        
-                const periods = data.reportPeriods || [];
-        const maxCols = Math.min(periods.length, 5); // display at most 5 periods to fit width
-        const renderHeader = (y: number) => {
-          doc.fillColor(secondaryColor).font('Helvetica-Bold').fontSize(8);
-          doc.text('Name', 55, y);
-          doc.text('Email', 140, y);
-          doc.text('Avg', 240, y);
-          // start rendering right to left (newest first or oldest first? periods is oldest -> newest left to right)
-          let startX = 280;
-          const colWidth = 265 / maxCols;
-          
-          for(let i = 0; i < maxCols; i++) {
-            const pIndex = periods.length > maxCols ? (periods.length - maxCols) + i : i;
-            const p = periods[pIndex];
-            const pLabel = p ? p.label.split(' - ')[0] : `P${i+1}`; // Shorten label
-            doc.text(pLabel, startX + (colWidth * i), y, { width: colWidth, align: 'center' });
+    
+    if (!data.sections || data.sections.employees !== false) {
+      // --- PAGE 3+: EMPLOYEE DETAILS BY DEPARTMENT ---
+          if (data.employeeDetails && data.employeeDetails.length > 0) {
+            type EmpList = NonNullable<typeof data.employeeDetails>;
+            const byDept = data.employeeDetails.reduce((acc, emp) => {
+              if (!acc[emp.department]) acc[emp.department] = [];
+              acc[emp.department].push(emp);
+              return acc;
+            }, {} as Record<string, EmpList>);
+      
+            for (const dept of Object.keys(byDept).sort()) {
+              doc.addPage();
+              doc.fillColor(accentColor).rect(50, 45, 8, 25).fill();
+              doc.fillColor(primaryColor).font('Helvetica-Bold').fontSize(16).text(`Employee Details: ${dept}`, 68, 47);
+              doc.moveDown(1.5);
+      
+              let tblHeaderY = doc.y;
+              
+                      const periods = data.reportPeriods || [];
+              const maxCols = Math.min(periods.length, 5); // display at most 5 periods to fit width
+              const renderHeader = (y: number) => {
+                doc.fillColor(secondaryColor).font('Helvetica-Bold').fontSize(8);
+                doc.text('Name', 55, y);
+                doc.text('Email', 140, y);
+                doc.text('Avg', 240, y);
+                // start rendering right to left (newest first or oldest first? periods is oldest -> newest left to right)
+                let startX = 280;
+                const colWidth = 265 / maxCols;
+                
+                for(let i = 0; i < maxCols; i++) {
+                  const pIndex = periods.length > maxCols ? (periods.length - maxCols) + i : i;
+                  const p = periods[pIndex];
+                  const pLabel = p ? p.label.split(' - ')[0] : `P${i+1}`; // Shorten label
+                  doc.text(pLabel, startX + (colWidth * i), y, { width: colWidth, align: 'center' });
+                }
+                
+                doc.strokeColor(gridColor).lineWidth(0.8).moveTo(50, y + 14).lineTo(545, y + 14).stroke();
+              };
+      
+              renderHeader(tblHeaderY);
+              let rowY = tblHeaderY + 20;
+      
+              byDept[dept].forEach((emp, index) => {
+                if (rowY > 720) {
+                  doc.addPage();
+                  tblHeaderY = 50;
+                  renderHeader(tblHeaderY);
+                  rowY = tblHeaderY + 20;
+                }
+                if (index % 2 === 0) {
+                  doc.fillColor('#fafafa').rect(50, rowY - 4, 495, 18).fill();
+                }
+                doc.fillColor(primaryColor).font('Helvetica-Bold').fontSize(8).text(emp.name, 55, rowY, { width: 80, height: 18, lineBreak: false });
+                doc.fillColor(secondaryColor).font('Helvetica').fontSize(7.5).text(emp.email.substring(0, 20), 140, rowY, { width: 95, height: 18, lineBreak: false });
+                
+                doc.fillColor(accentColor).font('Helvetica-Bold').fontSize(8).text(emp.overallAvg ? emp.overallAvg.toFixed(1) : '—', 240, rowY);
+                
+                const renderScore = (s: number | null, x: number, width: number) => {
+                  if (s === null) doc.fillColor('#f87171').text('—', x, rowY, { width, align: 'center' });
+                  else doc.fillColor('#10b981').text(s.toString(), x, rowY, { width, align: 'center' });
+                };
+                
+                let startX = 280;
+                const colWidth = 265 / maxCols;
+                
+                for(let i = 0; i < maxCols; i++) {
+                   const pIndex = periods.length > maxCols ? (periods.length - maxCols) + i : i;
+                   const s = emp.scores[pIndex];
+                   renderScore(s, startX + (colWidth * i), colWidth);
+                }
+      
+                rowY += 18;
+              });
+            }
           }
-          
-          doc.strokeColor(gridColor).lineWidth(0.8).moveTo(50, y + 14).lineTo(545, y + 14).stroke();
-        };
-
-        renderHeader(tblHeaderY);
-        let rowY = tblHeaderY + 20;
-
-        byDept[dept].forEach((emp, index) => {
-          if (rowY > 720) {
-            doc.addPage();
-            tblHeaderY = 50;
-            renderHeader(tblHeaderY);
-            rowY = tblHeaderY + 20;
-          }
-          if (index % 2 === 0) {
-            doc.fillColor('#fafafa').rect(50, rowY - 4, 495, 18).fill();
-          }
-          doc.fillColor(primaryColor).font('Helvetica-Bold').fontSize(8).text(emp.name, 55, rowY, { width: 80, height: 18, lineBreak: false });
-          doc.fillColor(secondaryColor).font('Helvetica').fontSize(7.5).text(emp.email.substring(0, 20), 140, rowY, { width: 95, height: 18, lineBreak: false });
-          
-          doc.fillColor(accentColor).font('Helvetica-Bold').fontSize(8).text(emp.overallAvg ? emp.overallAvg.toFixed(1) : '—', 240, rowY);
-          
-          const renderScore = (s: number | null, x: number, width: number) => {
-            if (s === null) doc.fillColor('#f87171').text('—', x, rowY, { width, align: 'center' });
-            else doc.fillColor('#10b981').text(s.toString(), x, rowY, { width, align: 'center' });
-          };
-          
-          let startX = 280;
-          const colWidth = 265 / maxCols;
-          
-          for(let i = 0; i < maxCols; i++) {
-             const pIndex = periods.length > maxCols ? (periods.length - maxCols) + i : i;
-             const s = emp.scores[pIndex];
-             renderScore(s, startX + (colWidth * i), colWidth);
-          }
-
-          rowY += 18;
-        });
-      }
     }
+
 
     doc.end();
   });

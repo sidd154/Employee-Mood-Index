@@ -62,6 +62,20 @@ export const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'overview' | 'departments' | 'employees' | 'reports' | 'settings' | 'users'>('overview');
   const [loading, setLoading] = useState(true);
 
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportModalState, setExportModalState] = useState({
+    format: 'pdf',
+    departments: 'all',
+    deptId: '',
+    sections: {
+      summary: true,
+      departments: true,
+      employees: true,
+      trends: true
+    }
+  });
+
+
   // Filter ranges
   const [range] = useState<'7d' | '30d' | 'ytd'>('ytd');
   const [chartType, setChartType] = useState<'area' | 'line'>('area');
@@ -636,37 +650,35 @@ export const AdminDashboard: React.FC = () => {
   };
 
   // Trigger Specific Week Report
-  const handleExportWeekReport = async () => {
-    if (!accessToken) return;
-
+  const handleExportModalSubmit = async () => {
     setExportingWeek(true);
-
     try {
-      const res = await fetch(`${API_URL}/reports/admin`, {
+      const response = await fetch('/api/admin/reports', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
-        },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           range: 'custom',
           startDate: selectedStartPeriod.start,
           endDate: selectedEndPeriod.end,
-          exportType: 'pdf',
+          exportType: exportModalState.format,
+          groupBy: groupBy,
+          options: exportModalState
         }),
       });
 
-      if (res.ok) {
-        alert('Weekly report exported successfully! Please check your email inbox.');
+      if (response.ok) {
+        alert('Report exported successfully! Please check your email inbox.');
+        setShowExportModal(false);
       } else {
-        const data = await res.json();
-        alert(data.error || 'Failed to request weekly report');
+        alert('Failed to generate report.');
       }
-    } catch (err) {
-      console.error(err);
+    } catch (error) {
+      console.error('Export error', error);
+      alert('Error connecting to server.');
     } finally {
       setExportingWeek(false);
     }
+  };
   };
 
   // Auth check
@@ -855,11 +867,10 @@ export const AdminDashboard: React.FC = () => {
                         </select>
                       </div>
                       <button
-                        onClick={handleExportWeekReport}
-                        disabled={exportingWeek}
+                        onClick={() => setShowExportModal(true)}
                         className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-lg shadow-blue-500/20 whitespace-nowrap"
                       >
-                        {exportingWeek ? 'Exporting...' : 'Export Week PDF'}
+                        Advanced Export
                       </button>
                     </div>
                   </div>
@@ -1334,70 +1345,16 @@ export const AdminDashboard: React.FC = () => {
                     <h2 className="text-xl font-bold text-white">Generate Organizational Reports</h2>
                     <p className="text-xs text-slate-400 mt-1">Export executive PDF summaries or raw data CSV reports</p>
                   </div>
-
-                  <div className="w-full max-w-xl glass p-8 rounded-2xl border border-slate-900">
-                    <form onSubmit={handleSaveSettings} className="space-y-6">
-                      <div className="space-y-4">
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                            Report Period
-                          </label>
-                          <div className="w-full bg-slate-900/50 border border-slate-800 rounded-xl px-4 py-3 text-xs text-slate-300 font-medium">
-                            From January (Year to Date)
-                          </div>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                            Export Format
-                          </label>
-                          <div className="flex gap-4">
-                            <label className="flex items-center gap-2 text-xs cursor-pointer text-slate-300">
-                              <input
-                                type="radio"
-                                name="exportType"
-                                value="pdf"
-                                checked={reportExportType === 'pdf'}
-                                onChange={() => setReportExportType('pdf')}
-                                className="accent-blue-500"
-                              />
-                              Executive PDF summary
-                            </label>
-                            <label className="flex items-center gap-2 text-xs cursor-pointer text-slate-300">
-                              <input
-                                type="radio"
-                                name="exportType"
-                                value="csv"
-                                checked={reportExportType === 'csv'}
-                                onChange={() => setReportExportType('csv')}
-                                className="accent-blue-500"
-                              />
-                              Raw Data CSV dataset
-                            </label>
-                          </div>
-                        </div>
-                      </div>
-
-                      {reportSuccess ? (
-                        <div className="p-4 rounded-xl bg-green-500/10 border border-green-500/20 text-green-400 text-xs text-center font-semibold">
-                          Report exported successfully! Please check your email inbox.
-                        </div>
-                      ) : null}
-
-                      <button
-                        type="button"
-                        onClick={handleSendAdminReport}
-                        disabled={sendingReport || (reportRange === 'custom' && (!reportStart || !reportEnd))}
-                        className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 text-white font-semibold py-3 px-4 rounded-xl transition-all shadow-lg shadow-blue-500/20 disabled:cursor-not-allowed text-xs"
-                      >
-                        {sendingReport ? 'Generating and Emailing...' : 'Email Report'}
-                      </button>
-                    </form>
+                  <div className="w-full max-w-xl glass p-8 rounded-2xl border border-slate-900 flex items-center justify-center">
+                    <button
+                      onClick={() => setShowExportModal(true)}
+                      className="bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 px-6 rounded-xl transition-all shadow-lg shadow-blue-500/20 text-xs"
+                    >
+                      Configure & Export Report
+                    </button>
                   </div>
                 </div>
               )}
-
-
 
               {/* TAB 7: ACCESS CONTROL */}
               {activeTab === 'users' && (

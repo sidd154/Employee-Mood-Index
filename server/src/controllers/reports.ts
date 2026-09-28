@@ -182,10 +182,10 @@ export const requestEmployeeReport = async (req: AuthenticatedRequest, res: Resp
   }
 };
 
-export const buildAndEmailAdminReport = async (userId: string, userEmail: string, range: string, startDate?: string, endDate?: string, exportType: 'pdf' | 'csv' = 'pdf', groupBy: 'weeks' | 'months' = 'weeks') => {
+export const buildAndEmailAdminReport = async (userId: string, userEmail: string, range: string, startDate?: string, endDate?: string, exportType: 'pdf' | 'csv' = 'pdf', groupBy: 'weeks' | 'months' = 'weeks', options: any = null) => {
   const rangeLabel = getRangeLabel(range, startDate, endDate);
   
-  let filterClause = '';
+let filterClause = '';
   const filterValues: any[] = [];
   if (range === 'custom' && startDate && endDate) {
     filterClause = `AND m.created_at >= $1 AND m.created_at <= $2`;
@@ -193,10 +193,19 @@ export const buildAndEmailAdminReport = async (userId: string, userEmail: string
   } else {
     const tempFilter = getDateFilter(range, undefined, undefined, 'm');
     filterClause = tempFilter.clause;
+    if (tempFilter.values) filterValues.push(...tempFilter.values);
+  }
+
+  let deptFilter = '';
+  let deptFilterUsers = '';
+  if (options && options.departments === 'specific' && options.deptId) {
+    // If it's specific department, filter users by department
+    deptFilter = ` AND u.department = '${options.deptId}'`;
+    deptFilterUsers = ` AND department = '${options.deptId}'`;
   }
 
   const moodRes = await query(
-    `SELECT AVG(mood_score) as avg_score FROM mood_entries m WHERE 1=1 ${filterClause}`,
+    `SELECT AVG(m.mood_score) as avg_score FROM mood_entries m JOIN users u ON m.user_id = u.id WHERE 1=1 ${filterClause}${deptFilter}`,
     filterValues
   );
   const avgScore = parseFloat(moodRes.rows[0].avg_score || '0');
@@ -216,7 +225,7 @@ export const buildAndEmailAdminReport = async (userId: string, userEmail: string
   const overallAvg = parseFloat(compStats.overall_avg || '0') || null;
 
   const checkinCountRes = await query(
-    `SELECT COUNT(*) as count FROM mood_entries m WHERE 1=1 ${filterClause}`,
+    `SELECT COUNT(*) as count FROM mood_entries m JOIN users u ON m.user_id = u.id WHERE 1=1 ${filterClause}${deptFilter}`,
     filterValues
   );
   const checkinsCount = parseInt(checkinCountRes.rows[0].count || '0');
@@ -224,7 +233,7 @@ export const buildAndEmailAdminReport = async (userId: string, userEmail: string
   const empCountRes = await query(
     `SELECT COUNT(*) as count FROM users u 
      JOIN roles r ON u.role_id = r.id 
-     WHERE r.name = 'employee' AND u.full_name IS NOT NULL`
+     WHERE r.name = 'employee' AND u.full_name IS NOT NULL${deptFilterUsers}`
   );
   const totalEmployees = parseInt(empCountRes.rows[0].count || '0');
   
@@ -246,8 +255,7 @@ export const buildAndEmailAdminReport = async (userId: string, userEmail: string
   const participationRate = totalEmployees > 0 ? Math.min(100, Math.round((checkinsCount / (totalEmployees * expectedCheckinsPerEmployee)) * 100)) : 0;
 
   const distRes = await query(
-    `SELECT mood_score, COUNT(*) as count FROM mood_entries m 
-     WHERE 1=1 ${filterClause}
+    `SELECT m.mood_score, COUNT(*) as count FROM mood_entries m JOIN users u ON m.user_id = u.id WHERE 1=1 ${filterClause}${deptFilter}
      GROUP BY mood_score`,
     filterValues
   );
@@ -466,42 +474,51 @@ export const buildAndEmailAdminReport = async (userId: string, userEmail: string
         moodCorrelation: parseFloat(row.avg_mood),
       })),
       employeeDetails,
-      reportPeriods
+      reportPeriods,
+      sections: options?.sections
     });
   } else {
     filename = `Admin_Wellness_Report_${range}.csv`;
 
     let csvText = `Employee Wellness Index Admin Report\nPeriod,${rangeLabel}\nOverall Wellness Index,${moodIndex}\nTotal Checkins,${checkinsCount}\n\n`;
     
-    csvText += `Wellness Distribution\nWellness Score,Count\n`;
-    distribution.forEach((d) => {
-      csvText += `${d.name},${d.count}\n`;
-    });
+    if (!options || options?.sections?.summary !== false) {
+      csvText += `Wellness Distribution\nWellness Score,Count\n`;
+      distribution.forEach((d) => {
+        csvText += `${d.name},${d.count}\n`;
+      });
+    }
 
-    csvText += `\nDepartment Breakdown\nDepartment,This Month Avg,Last Month Avg,Overall Avg,Team Size\n`;
-    deptStatsRes.rows.forEach((d: any) => {
-      csvText += `${d.name},${d.this_month_avg || '—'},${d.last_month_avg || '—'},${d.overall_avg || '—'},${d.headcount || 0}\n`;
-    });
+    if (!options || options?.sections?.departments !== false) {
+      csvText += `\nDepartment Breakdown\nDepartment,This Month Avg,Last Month Avg,Overall Avg,Team Size\n`;
+      deptStatsRes.rows.forEach((d: any) => {
+        csvText += `${d.name},${d.this_month_avg || '—'},${d.last_month_avg || '—'},${d.overall_avg || '—'},${d.headcount || 0}\n`;
+      });
+    }
 
-    csvText += `\nTop Feelings\nFeeling,Count,Wellness Correlation\n`;
-    feelRes.rows.forEach((f) => {
-      csvText += `${f.name},${f.count},${f.avg_mood}\n`;
-    });
+    if (!options || options?.sections?.trends !== false) {
+      csvText += `\nTop Feelings\nFeeling,Count,Wellness Correlation\n`;
+      feelRes.rows.forEach((f) => {
+        csvText += `${f.name},${f.count},${f.avg_mood}\n`;
+      });
 
-    csvText += `\nTop Contributors\nContributor,Count,Wellness Correlation\n`;
-    contRes.rows.forEach((c) => {
-      csvText += `${c.name},${c.count},${c.avg_mood}\n`;
-    });
+      csvText += `\nTop Contributors\nContributor,Count,Wellness Correlation\n`;
+      contRes.rows.forEach((c) => {
+        csvText += `${c.name},${c.count},${c.avg_mood}\n`;
+      });
+    }
 
-    let headers = "Department,Name,Email,Overall Avg,";
-    headers += reportPeriods.map(p => p.label).join(",") + "\n";
-    csvText += `\nEmployee Details by Department\n${headers}`;
-    
-    employeeDetails.forEach((emp) => {
-      let row = `"${emp.department}","${emp.name}","${emp.email}",${emp.overallAvg || '—'},`;
-      row += emp.scores.map((s: any) => s !== null ? s : '—').join(",") + "\n";
-      csvText += row;
-    });
+    if (!options || options?.sections?.employees !== false) {
+      let headers = "Department,Name,Email,Overall Avg,";
+      headers += reportPeriods.map((p: any) => p.label).join(",") + "\n";
+      csvText += `\nEmployee Details by Department\n${headers}`;
+      
+      employeeDetails.forEach((emp) => {
+        let row = `"${emp.department}","${emp.name}","${emp.email}",${emp.overallAvg || '—'},`;
+        row += emp.scores.map((s: any) => s !== null ? s : '—').join(",") + "\n";
+        csvText += row;
+      });
+    }
 
     reportBuffer = Buffer.from(csvText, 'utf-8');
   }
@@ -533,11 +550,11 @@ export const buildAndEmailAdminReport = async (userId: string, userEmail: string
 export const requestAdminReport = async (req: AuthenticatedRequest, res: Response) => {
   if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { range, startDate, endDate, exportType, groupBy } = req.body;
+  const { range, startDate, endDate, exportType, groupBy, options } = req.body;
   const userId = req.user.id;
 
   try {
-    await buildAndEmailAdminReport(userId, req.user.email, range, startDate, endDate, exportType, groupBy || 'weeks');
+    await buildAndEmailAdminReport(userId, req.user.email, range, startDate, endDate, exportType, groupBy || 'weeks', options);
     res.json({ message: `Report generated and sent to your email successfully.` });
   } catch (error: any) {
     console.error('Request admin report error:', error);
