@@ -51,7 +51,7 @@ function drawTrendLineChart(
     doc.fillColor(accentColor).circle(centerX, y, 2.5).fill();
     
     // Draw X-axis date label at the center
-    const dateStr = 'Wk of ' + new Date(t.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    const dateStr = 'Wk of ' + new Date(t.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
     doc.fillColor(secondaryColor).fontSize(6).text(dateStr, centerX - 25, startY + height + 5, { align: 'center', width: 50 });
     
     doc.restore();
@@ -80,7 +80,7 @@ function drawTrendLineChart(
 
     const shouldLabel = idx === 0 || idx === Math.floor(points.length / 2) || idx === points.length - 1;
     if (shouldLabel) {
-      const dateStr = 'Wk of ' + new Date(pt.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      const dateStr = 'Wk of ' + new Date(pt.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
       doc.fillColor(secondaryColor).fontSize(6).text(dateStr, pt.x - 25, startY + height + 5, { align: 'center', width: 50 });
     }
   });
@@ -307,16 +307,14 @@ export const generateAdminReportPDF = (
     }[];
     feelings: { name: string; count: number; moodCorrelation: number }[];
     contributors: { name: string; count: number; moodCorrelation: number }[];
-    employeeDetails?: {
+        employeeDetails?: {
       name: string;
       email: string;
       department: string;
       overallAvg: number | null;
-      week4: number | null;
-      week3: number | null;
-      week2: number | null;
-      week1: number | null;
+      scores: (number | null)[];
     }[];
+    reportPeriods?: { label: string; start: string; end: string }[];
   }
 ): Promise<Buffer> => {
   return new Promise((resolve, reject) => {
@@ -556,15 +554,24 @@ export const generateAdminReportPDF = (
 
         let tblHeaderY = doc.y;
         
+                const periods = data.reportPeriods || [];
+        const maxCols = Math.min(periods.length, 5); // display at most 5 periods to fit width
         const renderHeader = (y: number) => {
           doc.fillColor(secondaryColor).font('Helvetica-Bold').fontSize(8);
           doc.text('Name', 55, y);
-          doc.text('Email', 160, y);
-          doc.text('Overall', 280, y);
-          doc.text('Week 4', 330, y);
-          doc.text('Week 3', 380, y);
-          doc.text('Week 2', 430, y);
-          doc.text('Week 1 (Newest)', 480, y);
+          doc.text('Email', 140, y);
+          doc.text('Avg', 240, y);
+          // start rendering right to left (newest first or oldest first? periods is oldest -> newest left to right)
+          let startX = 280;
+          const colWidth = 265 / maxCols;
+          
+          for(let i = 0; i < maxCols; i++) {
+            const pIndex = periods.length > maxCols ? (periods.length - maxCols) + i : i;
+            const p = periods[pIndex];
+            const pLabel = p ? p.label.split(' - ')[0] : `P${i+1}`; // Shorten label
+            doc.text(pLabel, startX + (colWidth * i), y, { width: colWidth, align: 'center' });
+          }
+          
           doc.strokeColor(gridColor).lineWidth(0.8).moveTo(50, y + 14).lineTo(545, y + 14).stroke();
         };
 
@@ -581,19 +588,24 @@ export const generateAdminReportPDF = (
           if (index % 2 === 0) {
             doc.fillColor('#fafafa').rect(50, rowY - 4, 495, 18).fill();
           }
-          doc.fillColor(primaryColor).font('Helvetica-Bold').fontSize(8).text(emp.name, 55, rowY);
-          doc.fillColor(secondaryColor).font('Helvetica').fontSize(7.5).text(emp.email.substring(0, 25), 160, rowY);
+          doc.fillColor(primaryColor).font('Helvetica-Bold').fontSize(8).text(emp.name, 55, rowY, { width: 80, height: 18, lineBreak: false });
+          doc.fillColor(secondaryColor).font('Helvetica').fontSize(7.5).text(emp.email.substring(0, 20), 140, rowY, { width: 95, height: 18, lineBreak: false });
           
-          doc.fillColor(accentColor).font('Helvetica-Bold').fontSize(8).text(emp.overallAvg ? emp.overallAvg.toFixed(1) : '—', 280, rowY);
+          doc.fillColor(accentColor).font('Helvetica-Bold').fontSize(8).text(emp.overallAvg ? emp.overallAvg.toFixed(1) : '—', 240, rowY);
           
-          const renderScore = (s: number | null, x: number) => {
-            if (s === null) doc.fillColor('#f87171').text('—', x, rowY);
-            else doc.fillColor('#10b981').text(s.toString(), x, rowY);
+          const renderScore = (s: number | null, x: number, width: number) => {
+            if (s === null) doc.fillColor('#f87171').text('—', x, rowY, { width, align: 'center' });
+            else doc.fillColor('#10b981').text(s.toString(), x, rowY, { width, align: 'center' });
           };
-          renderScore(emp.week4, 335);
-          renderScore(emp.week3, 385);
-          renderScore(emp.week2, 435);
-          renderScore(emp.week1, 495);
+          
+          let startX = 280;
+          const colWidth = 265 / maxCols;
+          
+          for(let i = 0; i < maxCols; i++) {
+             const pIndex = periods.length > maxCols ? (periods.length - maxCols) + i : i;
+             const s = emp.scores[pIndex];
+             renderScore(s, startX + (colWidth * i), colWidth);
+          }
 
           rowY += 18;
         });

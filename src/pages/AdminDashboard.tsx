@@ -7,44 +7,54 @@ import {
 
 const API_URL = import.meta.env.VITE_API_URL || window.location.origin;
 
-const generateRecentWeeks = (count = 12) => {
-  const weeks = [];
+const generatePeriods = (count = 12, groupBy = 'weeks') => {
+  const periods = [];
   const now = new Date();
-  
-  const currentWeekStart = new Date(now);
-  const day = currentWeekStart.getDay(); // 0=Sun, 1=Mon...5=Fri, 6=Sat
-  
-  // Find the most recent Friday (or today if today is Friday)
-  let diff = 0;
-  if (day === 5) {
-    diff = 0;
-  } else if (day === 6) {
-    diff = -1;
-  } else {
-    // 0=Sun to 4=Thu -> subtract (day + 2)
-    diff = -(day + 2);
-  }
-  
-  currentWeekStart.setDate(currentWeekStart.getDate() + diff);
-  currentWeekStart.setHours(0, 0, 0, 0);
 
-  for (let i = 0; i < count; i++) {
-    const start = new Date(currentWeekStart);
-    start.setDate(start.getDate() - (i * 7));
+  if (groupBy === 'weeks') {
+    const currentWeekStart = new Date(now);
+    const day = currentWeekStart.getDay(); 
+    let diff = 0;
+    if (day === 5) diff = 0;
+    else if (day === 6) diff = -1;
+    else diff = -(day + 2);
     
-    const end = new Date(start);
-    end.setDate(end.getDate() + 6);
-    end.setHours(23, 59, 59, 999);
-    
-    let label = i === 0 ? 'Current Week' : i === 1 ? 'Last Week' : `Week of ${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
-    
-    weeks.push({
-      label,
-      start: start.toISOString(),
-      end: end.toISOString()
-    });
+    currentWeekStart.setDate(currentWeekStart.getDate() + diff);
+    currentWeekStart.setHours(0, 0, 0, 0);
+
+    for (let i = 0; i < count; i++) {
+      const start = new Date(currentWeekStart);
+      start.setDate(start.getDate() - (i * 7));
+      const end = new Date(start);
+      end.setDate(end.getDate() + 6);
+      end.setHours(23, 59, 59, 999);
+      
+      const label = `${start.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} - ${end.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`;
+      
+      periods.push({
+        label,
+        start: start.toISOString(),
+        end: end.toISOString()
+      });
+    }
+  } else {
+    // Months
+    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    for (let i = 0; i < count; i++) {
+      const start = new Date(currentMonthStart);
+      start.setMonth(start.getMonth() - i);
+      const end = new Date(start.getFullYear(), start.getMonth() + 1, 0, 23, 59, 59, 999);
+      
+      const label = start.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+      
+      periods.push({
+        label,
+        start: start.toISOString(),
+        end: end.toISOString()
+      });
+    }
   }
-  return weeks;
+  return periods;
 };
 
 export const AdminDashboard: React.FC = () => {
@@ -56,9 +66,17 @@ export const AdminDashboard: React.FC = () => {
   const [range] = useState<'7d' | '30d' | 'ytd'>('ytd');
   const [chartType, setChartType] = useState<'area' | 'line'>('area');
 
-  const [recentWeeks] = useState(generateRecentWeeks(12));
-  const [selectedStartWeek, setSelectedStartWeek] = useState(recentWeeks[0]);
-  const [selectedEndWeek, setSelectedEndWeek] = useState(recentWeeks[0]);
+  const [groupBy, setGroupBy] = useState<'weeks' | 'months'>('weeks');
+  const [periods, setPeriods] = useState(generatePeriods(12, 'weeks'));
+  const [selectedStartPeriod, setSelectedStartPeriod] = useState(periods[0]);
+  const [selectedEndPeriod, setSelectedEndPeriod] = useState(periods[0]);
+
+  useEffect(() => {
+    const p = generatePeriods(12, groupBy);
+    setPeriods(p);
+    setSelectedStartPeriod(p[0]);
+    setSelectedEndPeriod(p[0]);
+  }, [groupBy]);
   const [exportingWeek, setExportingWeek] = useState(false);
   const [stats, setStats] = useState({ moodIndex: 0, totalEmployees: 0, participationRate: 0, checkinsToday: 0 });
   const [trends, setTrends] = useState<any[]>([]);
@@ -127,12 +145,12 @@ export const AdminDashboard: React.FC = () => {
       const headers = { 'Authorization': `Bearer ${accessToken}` };
       
       // 1. Overview KPIs
-      const qs = `startDate=${encodeURIComponent(selectedStartWeek.start)}&endDate=${encodeURIComponent(selectedEndWeek.end)}`;
+      const qs = `startDate=${encodeURIComponent(selectedStartPeriod.start)}&endDate=${encodeURIComponent(selectedEndPeriod.end)}`;
       const statsRes = await fetch(`${API_URL}/analytics/overview?${qs}`, { headers });
       if (statsRes.ok) setStats(await statsRes.json());
 
       // 2. Trend data
-      const trendsRes = await fetch(`${API_URL}/analytics/trends?range=${range}`, { headers });
+      const trendsRes = await fetch(`${API_URL}/analytics/trends?range=${range}&groupBy=${groupBy}`, { headers });
       if (trendsRes.ok) setTrends(await trendsRes.json());
 
       // 3. Distribution data
@@ -168,14 +186,14 @@ export const AdminDashboard: React.FC = () => {
 
   useEffect(() => {
     fetchData();
-  }, [accessToken, range, selectedStartWeek, selectedEndWeek]);
+  }, [accessToken, range, selectedStartPeriod, selectedEndPeriod]);
 
   // Load employee explorer details
   const fetchEmployees = async () => {
     if (!accessToken) return;
     try {
       const headers = { 'Authorization': `Bearer ${accessToken}` };
-      const res = await fetch(`${API_URL}/employees?search=${employeeSearch}&departmentId=${selectedDeptFilter}&startDate=${selectedStartWeek.start}&endDate=${selectedEndWeek.end}`, { headers });
+      const res = await fetch(`${API_URL}/employees?search=${employeeSearch}&departmentId=${selectedDeptFilter}&startDate=${selectedStartPeriod.start}&endDate=${selectedEndPeriod.end}`, { headers });
       if (res.ok) setEmployees(await res.json());
     } catch (err) {
       console.error('Failed to fetch explorer:', err);
@@ -186,7 +204,7 @@ export const AdminDashboard: React.FC = () => {
     if (activeTab === 'employees') {
       fetchEmployees();
     }
-  }, [activeTab, employeeSearch, selectedDeptFilter, selectedStartWeek, selectedEndWeek]);
+  }, [activeTab, employeeSearch, selectedDeptFilter, selectedStartPeriod, selectedEndPeriod]);
 
   // Fetch specific department details
   const loadDeptDetails = async (id: string, rangeOverride?: '7d' | '30d' | 'ytd') => {
@@ -600,6 +618,7 @@ export const AdminDashboard: React.FC = () => {
           startDate: reportStart || undefined,
           endDate: reportEnd || undefined,
           exportType: reportExportType,
+          groupBy,
         }),
       });
 
@@ -631,8 +650,8 @@ export const AdminDashboard: React.FC = () => {
         },
         body: JSON.stringify({
           range: 'custom',
-          startDate: selectedStartWeek.start,
-          endDate: selectedEndWeek.end,
+          startDate: selectedStartPeriod.start,
+          endDate: selectedEndPeriod.end,
           exportType: 'pdf',
         }),
       });
@@ -671,7 +690,7 @@ export const AdminDashboard: React.FC = () => {
       const dateObj = new Date(payload[0].payload.date);
       const formattedDate = isNaN(dateObj.getTime())
         ? payload[0].payload.date
-        : `Week of ${dateObj.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`;
+        : `Week of ${dateObj.toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}`;
       return (
         <div className="bg-slate-900 border border-slate-800 p-2.5 rounded-lg shadow-xl text-xs">
           <p className="text-slate-400 mb-1">{formattedDate}</p>
@@ -795,16 +814,27 @@ export const AdminDashboard: React.FC = () => {
                     </div>
                     <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center w-full xl:w-auto">
                       <div className="flex items-center gap-2">
+                        <span className="text-xs text-stone-400">Group By:</span>
+                        <select
+                          value={groupBy}
+                          onChange={(e) => setGroupBy(e.target.value as 'weeks' | 'months')}
+                          className="bg-stone-900 border border-stone-800 rounded-xl px-3 py-2 text-xs text-white cursor-pointer hover:border-stone-700"
+                        >
+                          <option value="weeks">Weeks</option>
+                          <option value="months">Months</option>
+                        </select>
+                      </div>
+                      <div className="flex items-center gap-2">
                         <span className="text-xs text-stone-400">From:</span>
                         <select
-                          value={selectedStartWeek.start}
+                          value={selectedStartPeriod.start}
                           onChange={(e) => {
-                            const w = recentWeeks.find((rw) => rw.start === e.target.value);
-                            if (w) setSelectedStartWeek(w);
+                            const w = periods.find((rw) => rw.start === e.target.value);
+                            if (w) setSelectedStartPeriod(w);
                           }}
                           className="bg-stone-900 border border-stone-800 rounded-xl px-3 py-2 text-xs text-white cursor-pointer hover:border-stone-700"
                         >
-                          {recentWeeks.map((w) => (
+                          {periods.map((w) => (
                             <option key={w.start} value={w.start}>{w.label}</option>
                           ))}
                         </select>
@@ -812,14 +842,14 @@ export const AdminDashboard: React.FC = () => {
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-stone-400">To:</span>
                         <select
-                          value={selectedEndWeek.end}
+                          value={selectedEndPeriod.end}
                           onChange={(e) => {
-                            const w = recentWeeks.find((rw) => rw.end === e.target.value);
-                            if (w) setSelectedEndWeek(w);
+                            const w = periods.find((rw) => rw.end === e.target.value);
+                            if (w) setSelectedEndPeriod(w);
                           }}
                           className="bg-stone-900 border border-stone-800 rounded-xl px-3 py-2 text-xs text-white cursor-pointer hover:border-stone-700"
                         >
-                          {recentWeeks.map((w) => (
+                          {periods.map((w) => (
                             <option key={w.end} value={w.end}>{w.label}</option>
                           ))}
                         </select>
@@ -1029,7 +1059,7 @@ export const AdminDashboard: React.FC = () => {
 
                   {/* Department Breakdown for Selected Week */}
                   <div className="pt-6">
-                    <h3 className="text-sm font-bold text-white mb-4">Department Breakdown ({selectedStartWeek.label} {selectedStartWeek.start !== selectedEndWeek.start ? `- ${selectedEndWeek.label}` : ''})</h3>
+                    <h3 className="text-sm font-bold text-white mb-4">Department Breakdown ({selectedStartPeriod.label} {selectedStartPeriod.start !== selectedEndPeriod.start ? `- ${selectedEndPeriod.label}` : ''})</h3>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                       {departments.map((dept) => (
                         <div
@@ -1073,16 +1103,27 @@ export const AdminDashboard: React.FC = () => {
                     </div>
                     <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center w-full xl:w-auto">
                       <div className="flex items-center gap-2">
+                        <span className="text-xs text-stone-400">Group By:</span>
+                        <select
+                          value={groupBy}
+                          onChange={(e) => setGroupBy(e.target.value as 'weeks' | 'months')}
+                          className="bg-stone-900 border border-stone-800 rounded-xl px-3 py-2 text-xs text-white cursor-pointer hover:border-stone-700"
+                        >
+                          <option value="weeks">Weeks</option>
+                          <option value="months">Months</option>
+                        </select>
+                      </div>
+                      <div className="flex items-center gap-2">
                         <span className="text-xs text-stone-400">From:</span>
                         <select
-                          value={selectedStartWeek.start}
+                          value={selectedStartPeriod.start}
                           onChange={(e) => {
-                            const w = recentWeeks.find((rw) => rw.start === e.target.value);
-                            if (w) setSelectedStartWeek(w);
+                            const w = periods.find((rw) => rw.start === e.target.value);
+                            if (w) setSelectedStartPeriod(w);
                           }}
                           className="bg-stone-900 border border-stone-800 rounded-xl px-3 py-2 text-xs text-white cursor-pointer hover:border-stone-700"
                         >
-                          {recentWeeks.map((w) => (
+                          {periods.map((w) => (
                             <option key={w.start} value={w.start}>{w.label}</option>
                           ))}
                         </select>
@@ -1090,14 +1131,14 @@ export const AdminDashboard: React.FC = () => {
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-stone-400">To:</span>
                         <select
-                          value={selectedEndWeek.end}
+                          value={selectedEndPeriod.end}
                           onChange={(e) => {
-                            const w = recentWeeks.find((rw) => rw.end === e.target.value);
-                            if (w) setSelectedEndWeek(w);
+                            const w = periods.find((rw) => rw.end === e.target.value);
+                            if (w) setSelectedEndPeriod(w);
                           }}
                           className="bg-stone-900 border border-stone-800 rounded-xl px-3 py-2 text-xs text-white cursor-pointer hover:border-stone-700"
                         >
-                          {recentWeeks.map((w) => (
+                          {periods.map((w) => (
                             <option key={w.end} value={w.end}>{w.label}</option>
                           ))}
                         </select>
@@ -1190,18 +1231,22 @@ export const AdminDashboard: React.FC = () => {
                           <tr>
                             <th className="p-4">Name</th>
                             <th className="p-4">Department</th>
-                            <th className="p-4 text-center">Week 1</th>
-                            <th className="p-4 text-center">Week 2</th>
-                            <th className="p-4 text-center">Week 3</th>
-                            <th className="p-4 text-center">Week 4</th>
+                            {(() => {
+                              const eIdx = periods.findIndex(p => p.end === selectedEndPeriod.end);
+                              const sIdx = periods.findIndex(p => p.start === selectedStartPeriod.start);
+                              const activePeriods = (eIdx !== -1 && sIdx !== -1 && sIdx >= eIdx) ? periods.slice(eIdx, sIdx + 1).reverse() : [selectedEndPeriod];
+                              return activePeriods.map(p => (
+                                <th key={p.start} className="p-4 text-center whitespace-nowrap">{p.label}</th>
+                              ));
+                            })()}
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-900/50 text-slate-300">
                           {employees
                             .map((emp) => {
                               // Calculate missed checkins in the selected date range
-                              const filterStart = new Date(selectedStartWeek.start).getTime();
-                              const filterEnd = new Date(selectedEndWeek.end).getTime();
+                              const filterStart = new Date(selectedStartPeriod.start).getTime();
+                              const filterEnd = new Date(selectedEndPeriod.end).getTime();
                               const weeksInRange = Math.max(1, Math.ceil((filterEnd - filterStart) / (1000 * 60 * 60 * 24 * 7)));
                               
                               let checkinsInRange = 0;
@@ -1223,21 +1268,48 @@ export const AdminDashboard: React.FC = () => {
                               return 0;
                             })
                             .map((emp) => {
-                              // Identify history for the last 4 calendar weeks anchoring from selectedEndWeek
-                              const end = new Date(selectedEndWeek.end);
-                              const w1 = new Date(end); w1.setDate(w1.getDate() - 6); w1.setHours(0,0,0,0);
-                              const w2 = new Date(w1); w2.setDate(w2.getDate() - 7);
-                              const w3 = new Date(w2); w3.setDate(w3.getDate() - 7);
-                              const w4 = new Date(w3); w4.setDate(w4.getDate() - 7);
-                              
-                              const getScore = (startOfWeek: Date) => {
-                                const endOfWeek = new Date(startOfWeek);
-                                endOfWeek.setDate(endOfWeek.getDate() + 6);
-                                endOfWeek.setHours(23,59,59,999);
+                              const eIdx = periods.findIndex(p => p.end === selectedEndPeriod.end);
+                              const sIdx = periods.findIndex(p => p.start === selectedStartPeriod.start);
+                              const activePeriods = (eIdx !== -1 && sIdx !== -1 && sIdx >= eIdx) ? periods.slice(eIdx, sIdx + 1).reverse() : [selectedEndPeriod];
+
+                              const scores = activePeriods.map(p => {
+                                const pStart = new Date(p.start).getTime();
+                                const pEnd = new Date(p.end).getTime();
                                 const found = (emp.checkinHistory || []).find((h: any) => {
                                   const t = new Date(h.date).getTime();
-                                  return t >= startOfWeek.getTime() && t <= endOfWeek.getTime();
+                                  return t >= pStart && t <= pEnd;
                                 });
+                                return found ? found.score : null;
+                              });
+                              
+                              const newestScore = scores[scores.length - 1];
+                              const missedCurrent = newestScore === null;
+                              let bgClass = "bg-emerald-900/10 hover:bg-emerald-900/20";
+                              
+                              if (missedCurrent) {
+                                if (emp.missedWeeks === 1) bgClass = "bg-red-900/20 hover:bg-red-900/30";
+                                else if (emp.missedWeeks === 2) bgClass = "bg-red-900/40 hover:bg-red-900/50";
+                                else bgClass = "bg-red-900/60 hover:bg-red-900/70";
+                              } else {
+                                if (emp.missedWeeks === 0) bgClass = "bg-emerald-900/20 hover:bg-emerald-900/30";
+                              }
+
+                              return (
+                                <tr
+                                  key={emp.id}
+                                  onClick={() => loadEmpDetails(emp.id)}
+                                  className={`${bgClass} cursor-pointer transition-colors border-b border-slate-900/50`}
+                                >
+                                  <td className="p-4 font-bold text-white whitespace-nowrap">{emp.name}</td>
+                                  <td className="p-4 text-slate-400 whitespace-nowrap">{emp.department}</td>
+                                  {scores.map((s, idx) => (
+                                    <td key={idx} className="p-4 text-center font-bold">
+                                      {s !== null ? <span className="text-emerald-400">{s}</span> : <span className="text-red-400/50">—</span>}
+                                    </td>
+                                  ))}
+                                </tr>
+                              );
+                            });
                                 return found ? found.score : null;
                               };
                               
@@ -1789,7 +1861,7 @@ export const AdminDashboard: React.FC = () => {
                                 const dObj = new Date(payload[0].payload.date);
                                 const formattedD = isNaN(dObj.getTime())
                                   ? payload[0].payload.date
-                                  : `Week of ${dObj.toLocaleDateString()}`;
+                                  : `Week of ${dObj.toLocaleDateString('en-IN')}`;
                                 return (
                                   <div className="bg-stone-900 border border-stone-850 p-2.5 rounded-lg shadow-xl text-[10px]">
                                     <p className="text-stone-500 mb-1">{formattedD}</p>
@@ -1851,18 +1923,22 @@ export const AdminDashboard: React.FC = () => {
                         <tr>
                           <th className="p-4">Name</th>
                           <th className="p-4">Email</th>
-                          <th className="p-4 text-center">Week 1</th>
-                          <th className="p-4 text-center">Week 2</th>
-                          <th className="p-4 text-center">Week 3</th>
-                          <th className="p-4 text-center">Week 4</th>
+                          {(() => {
+                            const eIdx = periods.findIndex(p => p.end === selectedEndPeriod.end);
+                            const sIdx = periods.findIndex(p => p.start === selectedStartPeriod.start);
+                            const activePeriods = (eIdx !== -1 && sIdx !== -1 && sIdx >= eIdx) ? periods.slice(eIdx, sIdx + 1).reverse() : [selectedEndPeriod];
+                            return activePeriods.map(p => (
+                              <th key={p.start} className="p-4 text-center whitespace-nowrap">{p.label}</th>
+                            ));
+                          })()}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-900/50 text-slate-300">
                         {(deptDetails.employees || [])
                           .map((emp: any) => {
                             // Calculate missed checkins in the selected date range
-                            const filterStart = new Date(selectedStartWeek.start).getTime();
-                            const filterEnd = new Date(selectedEndWeek.end).getTime();
+                            const filterStart = new Date(selectedStartPeriod.start).getTime();
+                            const filterEnd = new Date(selectedEndPeriod.end).getTime();
                             const weeksInRange = Math.max(1, Math.ceil((filterEnd - filterStart) / (1000 * 60 * 60 * 24 * 7)));
                             
                             let checkinsInRange = 0;
@@ -1879,21 +1955,44 @@ export const AdminDashboard: React.FC = () => {
                           })
                           .sort((a: any, b: any) => a.missedWeeks - b.missedWeeks)
                           .map((emp: any) => {
-                            // Identify history for the last 4 calendar weeks anchoring from selectedEndWeek
-                            const end = new Date(selectedEndWeek.end);
-                            const w1 = new Date(end); w1.setDate(w1.getDate() - 6); w1.setHours(0,0,0,0);
-                            const w2 = new Date(w1); w2.setDate(w2.getDate() - 7);
-                            const w3 = new Date(w2); w3.setDate(w3.getDate() - 7);
-                            const w4 = new Date(w3); w4.setDate(w4.getDate() - 7);
-                            
-                            const getScore = (startOfWeek: Date) => {
-                              const endOfWeek = new Date(startOfWeek);
-                              endOfWeek.setDate(endOfWeek.getDate() + 6);
-                              endOfWeek.setHours(23,59,59,999);
+                            const eIdx = periods.findIndex(p => p.end === selectedEndPeriod.end);
+                            const sIdx = periods.findIndex(p => p.start === selectedStartPeriod.start);
+                            const activePeriods = (eIdx !== -1 && sIdx !== -1 && sIdx >= eIdx) ? periods.slice(eIdx, sIdx + 1).reverse() : [selectedEndPeriod];
+
+                            const scores = activePeriods.map(p => {
+                              const pStart = new Date(p.start).getTime();
+                              const pEnd = new Date(p.end).getTime();
                               const found = (emp.checkinHistory || []).find((h: any) => {
                                 const t = new Date(h.date).getTime();
-                                return t >= startOfWeek.getTime() && t <= endOfWeek.getTime();
+                                return t >= pStart && t <= pEnd;
                               });
+                              return found ? found.score : null;
+                            });
+                            
+                            const newestScore = scores[scores.length - 1];
+                            const missedCurrent = newestScore === null;
+                            let bgClass = "bg-emerald-900/10 hover:bg-emerald-900/20";
+                            
+                            if (missedCurrent) {
+                              if (emp.missedWeeks === 1) bgClass = "bg-red-900/20 hover:bg-red-900/30";
+                              else if (emp.missedWeeks === 2) bgClass = "bg-red-900/40 hover:bg-red-900/50";
+                              else bgClass = "bg-red-900/60 hover:bg-red-900/70";
+                            } else {
+                              if (emp.missedWeeks === 0) bgClass = "bg-emerald-900/20 hover:bg-emerald-900/30";
+                            }
+
+                            return (
+                              <tr key={emp.id} className={`${bgClass} transition-colors border-b border-slate-900/50`}>
+                                <td className="p-4 font-bold text-white whitespace-nowrap">{emp.name}</td>
+                                <td className="p-4 text-slate-400 whitespace-nowrap">{emp.email}</td>
+                                {scores.map((s, idx) => (
+                                  <td key={idx} className="p-4 text-center font-bold">
+                                    {s !== null ? <span className="text-emerald-400">{s}</span> : <span className="text-red-400/50">—</span>}
+                                  </td>
+                                ))}
+                              </tr>
+                            );
+                          });
                               return found ? found.score : null;
                             };
                             
@@ -1971,7 +2070,7 @@ export const AdminDashboard: React.FC = () => {
                     {empDetails.profile?.department || 'Other'} Department • {empDetails.profile?.email}
                   </p>
                   <p className="text-[10px] text-stone-500 mt-1.5 font-medium">
-                    Last wellbeing check-in: {empDetails.profile?.last_check_in ? new Date(empDetails.profile.last_check_in).toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' }) : 'Never'}
+                    Last wellbeing check-in: {empDetails.profile?.last_check_in ? new Date(empDetails.profile.last_check_in).toLocaleDateString('en-IN', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' }) : 'Never'}
                   </p>
                 </div>
 
@@ -2035,7 +2134,7 @@ export const AdminDashboard: React.FC = () => {
                                 const dObj = new Date(payload[0].payload.date);
                                 const formattedD = isNaN(dObj.getTime())
                                   ? payload[0].payload.date
-                                  : `Week of ${dObj.toLocaleDateString()}`;
+                                  : `Week of ${dObj.toLocaleDateString('en-IN')}`;
                                 return (
                                   <div className="bg-stone-900 border border-stone-850 p-2.5 rounded-lg shadow-xl text-[10px]">
                                     <p className="text-stone-500 mb-1">{formattedD}</p>

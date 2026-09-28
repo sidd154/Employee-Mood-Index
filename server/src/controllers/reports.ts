@@ -182,7 +182,7 @@ export const requestEmployeeReport = async (req: AuthenticatedRequest, res: Resp
   }
 };
 
-export const buildAndEmailAdminReport = async (userId: string, userEmail: string, range: string, startDate?: string, endDate?: string, exportType: 'pdf' | 'csv' = 'pdf') => {
+export const buildAndEmailAdminReport = async (userId: string, userEmail: string, range: string, startDate?: string, endDate?: string, exportType: 'pdf' | 'csv' = 'pdf', groupBy: 'weeks' | 'months' = 'weeks') => {
   const rangeLabel = getRangeLabel(range, startDate, endDate);
   
   let filterClause = '';
@@ -337,43 +337,97 @@ export const buildAndEmailAdminReport = async (userId: string, userEmail: string
   );
 
   const now = endDate ? new Date(endDate) : new Date();
-  const currentWeekStart = new Date(now);
-  const day = currentWeekStart.getDay(); // 0=Sun...5=Fri,6=Sat
-  let diff = 0;
-  if (day === 5) diff = 0;
-  else if (day === 6) diff = -1;
-  else diff = -(day + 2);
   
-  currentWeekStart.setDate(currentWeekStart.getDate() + diff);
-  currentWeekStart.setHours(0, 0, 0, 0);
+  // generate periods logic inside backend
+  const activePeriods = [];
+  let currentFilterEnd = now;
+  if (startDate && endDate && range === 'custom') {
+    // If it's a custom range, we just use the passed dates as boundaries.
+    // Wait, the user wants month-wise per employee reports based on the groupBy filter.
+    // Let's generate exactly the periods from startDate to endDate using groupBy.
+  }
+  
+  // Actually, we can generate a fixed 12 periods based on 'now' and just slice it to fit the requested timeframe.
+  const generatePeriods = (count = 12, groupBy = 'weeks') => {
+    const periods = [];
+    if (groupBy === 'weeks') {
+      const currentWeekStart = new Date(now);
+      const day = currentWeekStart.getDay(); 
+      let diff = 0;
+      if (day === 5) diff = 0;
+      else if (day === 6) diff = -1;
+      else diff = -(day + 2);
+      
+      currentWeekStart.setDate(currentWeekStart.getDate() + diff);
+      currentWeekStart.setHours(0, 0, 0, 0);
 
-  const w1 = new Date(currentWeekStart); // newest
-  const w2 = new Date(w1); w2.setDate(w2.getDate() - 7);
-  const w3 = new Date(w2); w3.setDate(w3.getDate() - 7);
-  const w4 = new Date(w3); w4.setDate(w4.getDate() - 7); // oldest
+      for (let i = 0; i < count; i++) {
+        const start = new Date(currentWeekStart);
+        start.setDate(start.getDate() - (i * 7));
+        const end = new Date(start);
+        end.setDate(end.getDate() + 6);
+        end.setHours(23, 59, 59, 999);
+        
+        const label = `${start.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} - ${end.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`;
+        
+        periods.push({
+          label,
+          start: start.toISOString(),
+          end: end.toISOString()
+        });
+      }
+    } else {
+      const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      for (let i = 0; i < count; i++) {
+        const start = new Date(currentMonthStart);
+        start.setMonth(start.getMonth() - i);
+        const end = new Date(start.getFullYear(), start.getMonth() + 1, 0, 23, 59, 59, 999);
+        
+        const label = start.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+        
+        periods.push({
+          label,
+          start: start.toISOString(),
+          end: end.toISOString()
+        });
+      }
+    }
+    return periods;
+  };
+  
+  const periods = generatePeriods(12, groupBy);
+  
+  // Determine which periods to show
+  let eIdx = 0;
+  let sIdx = 3; // By default show 4 periods
+  if (startDate && endDate) {
+    eIdx = periods.findIndex(p => p.end === endDate);
+    sIdx = periods.findIndex(p => p.start === startDate);
+    if (eIdx === -1) eIdx = 0;
+    if (sIdx === -1) sIdx = periods.length - 1;
+  }
+  
+  const reportPeriods = periods.slice(eIdx, sIdx + 1).reverse();
 
-  const getScore = (history: any[], startOfWeek: Date) => {
-    const endOfWeek = new Date(startOfWeek);
-    endOfWeek.setDate(endOfWeek.getDate() + 6);
-    endOfWeek.setHours(23, 59, 59, 999);
-    const found = history.find((h: any) => {
+  const getScore = (history, startIso, endIso) => {
+    const s = new Date(startIso).getTime();
+    const e = new Date(endIso).getTime();
+    const found = history.find(h => {
       const t = new Date(h.date).getTime();
-      return t >= startOfWeek.getTime() && t <= endOfWeek.getTime();
+      return t >= s && t <= e;
     });
     return found ? found.score : null;
   };
 
-  const employeeDetails = employeesRes.rows.map((row: any) => {
+  const employeeDetails = employeesRes.rows.map((row) => {
     const hist = Array.isArray(row.recent_history) ? row.recent_history : [];
+    const scores = reportPeriods.map(p => getScore(hist, p.start, p.end));
     return {
       name: row.name,
       email: row.email,
       department: row.department,
       overallAvg: row.overall_avg ? parseFloat(row.overall_avg) : null,
-      week4: getScore(hist, w4),
-      week3: getScore(hist, w3),
-      week2: getScore(hist, w2),
-      week1: getScore(hist, w1),
+      scores
     };
   });
 
@@ -411,7 +465,8 @@ export const buildAndEmailAdminReport = async (userId: string, userEmail: string
         count: parseInt(row.count),
         moodCorrelation: parseFloat(row.avg_mood),
       })),
-      employeeDetails
+      employeeDetails,
+      reportPeriods
     });
   } else {
     filename = `Admin_Wellness_Report_${range}.csv`;
@@ -438,9 +493,14 @@ export const buildAndEmailAdminReport = async (userId: string, userEmail: string
       csvText += `${c.name},${c.count},${c.avg_mood}\n`;
     });
 
-    csvText += `\nEmployee Details by Department\nDepartment,Name,Email,Overall Avg,Week 4 (Oldest),Week 3,Week 2,Week 1 (Newest)\n`;
+    let headers = "Department,Name,Email,Overall Avg,";
+    headers += reportPeriods.map(p => p.label).join(",") + "\n";
+    csvText += `\nEmployee Details by Department\n${headers}`;
+    
     employeeDetails.forEach((emp) => {
-      csvText += `"${emp.department}","${emp.name}","${emp.email}",${emp.overallAvg || '—'},${emp.week4 || '—'},${emp.week3 || '—'},${emp.week2 || '—'},${emp.week1 || '—'}\n`;
+      let row = `"${emp.department}","${emp.name}","${emp.email}",${emp.overallAvg || '—'},`;
+      row += emp.scores.map((s: any) => s !== null ? s : '—').join(",") + "\n";
+      csvText += row;
     });
 
     reportBuffer = Buffer.from(csvText, 'utf-8');
@@ -473,11 +533,11 @@ export const buildAndEmailAdminReport = async (userId: string, userEmail: string
 export const requestAdminReport = async (req: AuthenticatedRequest, res: Response) => {
   if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { range, startDate, endDate, exportType } = req.body;
+  const { range, startDate, endDate, exportType, groupBy } = req.body;
   const userId = req.user.id;
 
   try {
-    await buildAndEmailAdminReport(userId, req.user.email, range, startDate, endDate, exportType);
+    await buildAndEmailAdminReport(userId, req.user.email, range, startDate, endDate, exportType, groupBy || 'weeks');
     res.json({ message: `Report generated and sent to your email successfully.` });
   } catch (error: any) {
     console.error('Request admin report error:', error);
