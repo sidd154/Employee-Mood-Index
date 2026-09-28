@@ -1388,17 +1388,90 @@ export const AdminDashboard: React.FC = () => {
               {/* TAB 5: REPORTS */}
               {activeTab === 'reports' && (
                 <div className="space-y-6">
-                  <div>
-                    <h2 className="text-xl font-bold text-white">Generate Organizational Reports</h2>
-                    <p className="text-xs text-slate-400 mt-1">Export executive PDF summaries or raw data CSV reports</p>
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div>
+                      <h2 className="text-xl font-bold text-white">Generate Organizational Reports</h2>
+                      <p className="text-xs text-slate-400 mt-1">Export executive PDF summaries or raw data CSV reports</p>
+                    </div>
+                    {/* The date range filter is already at the top of the tab container via the global filter bar */}
                   </div>
-                  <div className="w-full max-w-xl glass p-8 rounded-2xl border border-slate-900 flex items-center justify-center">
-                    <button
-                      onClick={() => setShowExportModal(true)}
-                      className="bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 px-6 rounded-xl transition-all shadow-lg shadow-blue-500/20 text-xs"
-                    >
-                      Configure & Export Report
-                    </button>
+
+                  <div className="w-full max-w-2xl glass p-6 rounded-2xl border border-slate-900 space-y-8">
+                    
+                    {/* 1. Format */}
+                    <div className="space-y-3">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">File Format</label>
+                      <div className="flex gap-4">
+                        <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer bg-slate-900/50 px-4 py-3 rounded-xl border border-slate-800 flex-1 hover:bg-slate-800 transition-colors">
+                          <input type="radio" name="em_format" checked={exportModalState.format === 'pdf'} onChange={() => setExportModalState({...exportModalState, format: 'pdf'})} className="accent-blue-500" />
+                          PDF Executive Summary
+                        </label>
+                        <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer bg-slate-900/50 px-4 py-3 rounded-xl border border-slate-800 flex-1 hover:bg-slate-800 transition-colors">
+                          <input type="radio" name="em_format" checked={exportModalState.format === 'csv'} onChange={() => setExportModalState({...exportModalState, format: 'csv'})} className="accent-blue-500" />
+                          CSV Raw Dataset
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* 2. Target Audience (Who) */}
+                    <div className="space-y-3">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Target Data</label>
+                      <select
+                        value={exportModalState.departments}
+                        onChange={(e) => setExportModalState({...exportModalState, departments: e.target.value, deptId: ''})}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-xs text-white"
+                      >
+                        <option value="all">Entire Organization</option>
+                        <option value="specific">Specific Department</option>
+                      </select>
+                      
+                      {exportModalState.departments === 'specific' && (
+                        <select
+                          value={exportModalState.deptId}
+                          onChange={(e) => setExportModalState({...exportModalState, deptId: e.target.value})}
+                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-xs text-white mt-2"
+                        >
+                          <option value="" disabled>Select Department...</option>
+                          {departments.map((d: any) => (
+                            <option key={d.id} value={d.name}>{d.name}</option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+
+                    {/* 3. Sections to Include */}
+                    <div className="space-y-3">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Sections to Include</label>
+                      <div className="space-y-3 bg-slate-900/50 p-5 rounded-xl border border-slate-800">
+                        <label className="flex items-center gap-3 text-xs text-slate-300 cursor-pointer">
+                          <input type="checkbox" checked={exportModalState.sections.summary} onChange={(e) => setExportModalState({...exportModalState, sections: {...exportModalState.sections, summary: e.target.checked}})} className="accent-blue-500 rounded h-4 w-4" />
+                          Overall Executive Summary
+                        </label>
+                        <label className="flex items-center gap-3 text-xs text-slate-300 cursor-pointer">
+                          <input type="checkbox" checked={exportModalState.sections.trends} onChange={(e) => setExportModalState({...exportModalState, sections: {...exportModalState.sections, trends: e.target.checked}})} className="accent-blue-500 rounded h-4 w-4" />
+                          Trends & Analytics
+                        </label>
+                        <label className="flex items-center gap-3 text-xs text-slate-300 cursor-pointer">
+                          <input type="checkbox" checked={exportModalState.sections.departments} onChange={(e) => setExportModalState({...exportModalState, sections: {...exportModalState.sections, departments: e.target.checked}})} className="accent-blue-500 rounded h-4 w-4" />
+                          Department Breakdowns
+                        </label>
+                        <label className="flex items-center gap-3 text-xs text-slate-300 cursor-pointer">
+                          <input type="checkbox" checked={exportModalState.sections.employees} onChange={(e) => setExportModalState({...exportModalState, sections: {...exportModalState.sections, employees: e.target.checked}})} className="accent-blue-500 rounded h-4 w-4" />
+                          Employee-Level Detail Tables
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="pt-4 flex justify-end">
+                      <button
+                        onClick={handleExportModalSubmit}
+                        disabled={exportingWeek || (exportModalState.departments === 'specific' && !exportModalState.deptId)}
+                        className="bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 text-white px-8 py-3 rounded-xl text-xs font-bold transition-all shadow-lg shadow-blue-500/20"
+                      >
+                        {exportingWeek ? 'Generating Report...' : 'Download Report'}
+                      </button>
+                    </div>
+
                   </div>
                 </div>
               )}
@@ -2332,103 +2405,7 @@ export const AdminDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Advanced Export Modal */}
-      {showExportModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
-          <div className="bg-stone-900 border border-stone-800 rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]">
-            <div className="p-6 border-b border-stone-800 flex justify-between items-center shrink-0">
-              <h3 className="text-lg font-bold text-white">Advanced Report Export</h3>
-              <button onClick={() => setShowExportModal(false)} className="text-stone-400 hover:text-white p-2">
-                ✕
-              </button>
-            </div>
-            
-            <div className="p-6 space-y-6 overflow-y-auto grow custom-scrollbar">
-              
-              {/* 1. Format */}
-              <div className="space-y-3">
-                <label className="block text-[10px] font-bold text-stone-500 uppercase tracking-wider">File Format</label>
-                <div className="flex gap-4">
-                  <label className="flex items-center gap-2 text-xs text-stone-300 cursor-pointer">
-                    <input type="radio" name="em_format" checked={exportModalState.format === 'pdf'} onChange={() => setExportModalState({...exportModalState, format: 'pdf'})} className="accent-blue-500" />
-                    PDF Executive Summary
-                  </label>
-                  <label className="flex items-center gap-2 text-xs text-stone-300 cursor-pointer">
-                    <input type="radio" name="em_format" checked={exportModalState.format === 'csv'} onChange={() => setExportModalState({...exportModalState, format: 'csv'})} className="accent-blue-500" />
-                    CSV Raw Dataset
-                  </label>
-                </div>
-              </div>
-
-              {/* 2. Target Audience (Who) */}
-              <div className="space-y-3">
-                <label className="block text-[10px] font-bold text-stone-500 uppercase tracking-wider">Target Data</label>
-                <select
-                  value={exportModalState.departments}
-                  onChange={(e) => setExportModalState({...exportModalState, departments: e.target.value, deptId: ''})}
-                  className="w-full bg-stone-950 border border-stone-800 rounded-xl px-4 py-2 text-xs text-white"
-                >
-                  <option value="all">Entire Organization</option>
-                  <option value="specific">Specific Department</option>
-                </select>
-                
-                {exportModalState.departments === 'specific' && (
-                  <select
-                    value={exportModalState.deptId}
-                    onChange={(e) => setExportModalState({...exportModalState, deptId: e.target.value})}
-                    className="w-full bg-stone-950 border border-stone-800 rounded-xl px-4 py-2 text-xs text-white mt-2"
-                  >
-                    <option value="" disabled>Select Department...</option>
-                    {departments.map((d: any) => (
-                      <option key={d.id} value={d.name}>{d.name}</option>
-                    ))}
-                  </select>
-                )}
-              </div>
-
-              {/* 3. Sections to Include */}
-              <div className="space-y-3">
-                <label className="block text-[10px] font-bold text-stone-500 uppercase tracking-wider">Sections to Include</label>
-                <div className="space-y-2 bg-stone-950/50 p-4 rounded-xl border border-stone-800/50">
-                  <label className="flex items-center gap-3 text-xs text-stone-300 cursor-pointer">
-                    <input type="checkbox" checked={exportModalState.sections.summary} onChange={(e) => setExportModalState({...exportModalState, sections: {...exportModalState.sections, summary: e.target.checked}})} className="accent-blue-500 rounded" />
-                    Overall Executive Summary
-                  </label>
-                  <label className="flex items-center gap-3 text-xs text-stone-300 cursor-pointer">
-                    <input type="checkbox" checked={exportModalState.sections.trends} onChange={(e) => setExportModalState({...exportModalState, sections: {...exportModalState.sections, trends: e.target.checked}})} className="accent-blue-500 rounded" />
-                    Trends & Analytics
-                  </label>
-                  <label className="flex items-center gap-3 text-xs text-stone-300 cursor-pointer">
-                    <input type="checkbox" checked={exportModalState.sections.departments} onChange={(e) => setExportModalState({...exportModalState, sections: {...exportModalState.sections, departments: e.target.checked}})} className="accent-blue-500 rounded" />
-                    Department Breakdowns
-                  </label>
-                  <label className="flex items-center gap-3 text-xs text-stone-300 cursor-pointer">
-                    <input type="checkbox" checked={exportModalState.sections.employees} onChange={(e) => setExportModalState({...exportModalState, sections: {...exportModalState.sections, employees: e.target.checked}})} className="accent-blue-500 rounded" />
-                    Employee-Level Detail Tables
-                  </label>
-                </div>
-              </div>
-
-            </div>
-
-            <div className="p-6 border-t border-stone-800 flex justify-end gap-3 shrink-0">
-              <button
-                onClick={() => setShowExportModal(false)}
-                className="px-4 py-2 text-xs font-semibold text-stone-400 hover:text-white transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleExportModalSubmit}
-                disabled={exportingWeek || (exportModalState.departments === 'specific' && !exportModalState.deptId)}
-                className="bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 text-white px-6 py-2 rounded-xl text-xs font-bold transition-all"
-              >
-                {exportingWeek ? 'Generating...' : 'Email Report'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      
     </div>
   );
 };
