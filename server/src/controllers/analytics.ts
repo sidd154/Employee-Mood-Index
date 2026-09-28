@@ -190,8 +190,19 @@ export const getDepartmentDetails = async (req: AuthenticatedRequest, res: Respo
     }
 
     const deptName = deptInfo.rows[0].name;
-    const dateFilter = `AND m.created_at >= DATE_TRUNC('year', NOW())`;
+    let dateFilter = '';
     const values: any[] = [id];
+    let paramIdx = 2;
+    if (startDate && endDate) {
+      dateFilter = `AND m.created_at >= $1 AND m.created_at <= $2`;
+      values.push(new Date(startDate as string), new Date(endDate as string));
+      // In this specific query pattern, we can't easily dynamically index $2 and $3 because 
+      // the original query only used $1. Wait, if we push to values, the main query only passes values.
+      // But we have $1 as id. So dates should be $2 and $3.
+      dateFilter = `AND m.created_at >= $2 AND m.created_at <= $3`;
+    } else {
+      dateFilter = `AND m.created_at >= DATE_TRUNC('year', NOW())`;
+    }
 
     const trends = await query(
       `SELECT 
@@ -266,7 +277,7 @@ export const getDepartmentDetails = async (req: AuthenticatedRequest, res: Respo
            '[]'
          ) as checkin_history
        FROM users u
-       LEFT JOIN mood_entries m ON m.user_id = u.id AND m.created_at >= DATE_TRUNC('year', NOW())
+       LEFT JOIN mood_entries m ON m.user_id = u.id ${dateFilter}
        WHERE u.department_id = $1 AND u.full_name IS NOT NULL
        GROUP BY u.id, u.full_name, u.email
        ORDER BY u.full_name ASC`,
@@ -310,8 +321,15 @@ export const getEmployeeExplorer = async (req: AuthenticatedRequest, res: Respon
 
     if (departmentId) {
       params.push(departmentId);
-      whereClause += ` AND u.department_id = $${paramIndex}`;
+      whereClause += ` AND u.department_id = ${paramIndex}`;
       paramIndex++;
+    }
+
+    let dateJoinFilter = `AND m.created_at >= DATE_TRUNC('year', NOW())`;
+    if (startDate && endDate) {
+      dateJoinFilter = `AND m.created_at >= ${paramIndex} AND m.created_at <= ${paramIndex + 1}`;
+      params.push(new Date(startDate as string), new Date(endDate as string));
+      paramIndex += 2;
     }
 
     const employeesRes = await query(
@@ -332,7 +350,7 @@ export const getEmployeeExplorer = async (req: AuthenticatedRequest, res: Respon
        FROM users u
        JOIN roles r ON u.role_id = r.id
        LEFT JOIN departments d ON u.department_id = d.id
-       LEFT JOIN mood_entries m ON m.user_id = u.id AND m.created_at >= DATE_TRUNC('year', NOW())
+       LEFT JOIN mood_entries m ON m.user_id = u.id ${dateJoinFilter}
        ${whereClause}
        GROUP BY u.id, u.full_name, d.name, u.created_at
        ORDER BY u.full_name ASC`,
@@ -341,9 +359,14 @@ export const getEmployeeExplorer = async (req: AuthenticatedRequest, res: Respon
 
     const processedEmployees = employeesRes.rows.map((row) => {
       const count = parseInt(row.check_ins_count || '0');
-      const startOfYear = new Date(new Date().getFullYear(), 0, 1);
-      const dateLimit = new Date(row.created_at) > startOfYear ? new Date(row.created_at) : startOfYear;
-      const weeksSinceLimit = Math.max(1, Math.ceil((Date.now() - dateLimit.getTime()) / (1000 * 60 * 60 * 24 * 7)));
+      let filterStart = new Date(new Date().getFullYear(), 0, 1);
+      let filterEnd = new Date();
+      if (startDate && endDate) {
+        filterStart = new Date(startDate as string);
+        filterEnd = new Date(endDate as string);
+      }
+      const dateLimit = new Date(row.created_at) > filterStart ? new Date(row.created_at) : filterStart;
+      const weeksSinceLimit = Math.max(1, Math.ceil((filterEnd.getTime() - dateLimit.getTime()) / (1000 * 60 * 60 * 24 * 7)));
       const participationRate = Math.min(Math.round((count / weeksSinceLimit) * 100), 100);
 
       return {
