@@ -62,7 +62,6 @@ export const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'overview' | 'departments' | 'employees' | 'reports' | 'settings' | 'users'>('overview');
   const [loading, setLoading] = useState(true);
 
-  const [showExportModal, setShowExportModal] = useState(false);
   const [exportModalState, setExportModalState] = useState({
     format: 'pdf',
     departments: 'all',
@@ -143,13 +142,7 @@ export const AdminDashboard: React.FC = () => {
   // Detailed Modal for Mood Click
   const [selectedMoodScore, setSelectedMoodScore] = useState<number | null>(null);
 
-  // Admin Reports Form
-  const [reportRange] = useState<'7d' | '30d' | 'ytd' | 'custom'>('ytd');
-  const [reportStart] = useState('');
-  const [reportEnd] = useState('');
-  const [reportExportType, setReportExportType] = useState<'pdf' | 'csv'>('pdf');
-  const [sendingReport, setSendingReport] = useState(false);
-  const [reportSuccess, setReportSuccess] = useState(false);
+
 
   // Load baseline statistics
   const fetchData = async () => {
@@ -612,42 +605,7 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
-  // Trigger Admin Report
-  const handleSendAdminReport = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!accessToken) return;
 
-    setSendingReport(true);
-    setReportSuccess(false);
-
-    try {
-      const res = await fetch(`${API_URL}/reports/admin`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({
-          range: reportRange,
-          startDate: reportStart || undefined,
-          endDate: reportEnd || undefined,
-          exportType: reportExportType,
-          groupBy,
-        }),
-      });
-
-      if (res.ok) {
-        setReportSuccess(true);
-      } else {
-        const data = await res.json();
-        alert(data.error || 'Failed to request report');
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setSendingReport(false);
-    }
-  };
 
   // Trigger Specific Week Report
   const handleExportModalSubmit = async () => {
@@ -655,7 +613,7 @@ export const AdminDashboard: React.FC = () => {
     try {
       const response = await fetch('/api/admin/reports', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
         body: JSON.stringify({
           range: 'custom',
           startDate: selectedStartPeriod.start,
@@ -668,7 +626,7 @@ export const AdminDashboard: React.FC = () => {
 
       if (response.ok) {
         alert('Report exported successfully! Please check your email inbox.');
-        setShowExportModal(false);
+
       } else {
         alert('Failed to generate report.');
       }
@@ -678,7 +636,6 @@ export const AdminDashboard: React.FC = () => {
     } finally {
       setExportingWeek(false);
     }
-  };
   };
 
   // Auth check
@@ -867,7 +824,7 @@ export const AdminDashboard: React.FC = () => {
                         </select>
                       </div>
                       <button
-                        onClick={() => setShowExportModal(true)}
+                        onClick={() => setActiveTab('reports')}
                         className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-lg shadow-blue-500/20 whitespace-nowrap"
                       >
                         Advanced Export
