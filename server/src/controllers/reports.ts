@@ -200,8 +200,8 @@ let filterClause = '';
   let deptFilterUsers = '';
   if (options && options.departments === 'specific' && options.deptId) {
     // If it's specific department, filter users by department
-    deptFilter = ` AND u.department = '${options.deptId}'`;
-    deptFilterUsers = ` AND department = '${options.deptId}'`;
+    deptFilter = ` AND u.department_id = (SELECT id FROM departments WHERE name = '${options.deptId}')`;
+    deptFilterUsers = ` AND u.department_id = (SELECT id FROM departments WHERE name = '${options.deptId}')`;
   }
 
   const moodRes = await query(
@@ -339,7 +339,7 @@ let filterClause = '';
      JOIN roles r ON u.role_id = r.id
      LEFT JOIN departments d ON u.department_id = d.id
      LEFT JOIN mood_entries m ON m.user_id = u.id
-     WHERE r.name = 'employee' AND u.full_name IS NOT NULL
+     WHERE r.name = 'employee' AND u.full_name IS NOT NULL${deptFilterUsers}
      GROUP BY u.id, u.full_name, u.email, d.name
      ORDER BY department ASC, u.full_name ASC`
   );

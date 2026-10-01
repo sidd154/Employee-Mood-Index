@@ -321,13 +321,13 @@ export const getEmployeeExplorer = async (req: AuthenticatedRequest, res: Respon
 
     if (departmentId) {
       params.push(departmentId);
-      whereClause += ` AND u.department_id = ${paramIndex}`;
+      whereClause += ` AND u.department_id = $${paramIndex}`;
       paramIndex++;
     }
 
     let dateJoinFilter = `AND m.created_at >= DATE_TRUNC('year', NOW())`;
     if (startDate && endDate) {
-      dateJoinFilter = `AND m.created_at >= ${paramIndex} AND m.created_at <= ${paramIndex + 1}`;
+      dateJoinFilter = `AND m.created_at >= $${paramIndex} AND m.created_at <= $${paramIndex + 1}`;
       params.push(new Date(startDate as string), new Date(endDate as string));
       paramIndex += 2;
     }
