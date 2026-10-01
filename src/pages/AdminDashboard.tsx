@@ -611,7 +611,7 @@ export const AdminDashboard: React.FC = () => {
   const handleExportModalSubmit = async () => {
     setExportingWeek(true);
     try {
-      const response = await fetch(`${API_URL}/admin/reports`, {
+      const response = await fetch(`${API_URL}/reports/admin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
         body: JSON.stringify({
