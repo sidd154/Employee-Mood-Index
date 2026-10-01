@@ -297,6 +297,7 @@ export const generateAdminReportPDF = (
     checkinsCount: number;
     distribution: { name: string; count: number }[];
     trends: { date: string; score: number }[];
+    departmentName?: string;
     departments: {
       name: string;
       headcount: number;
@@ -353,8 +354,8 @@ export const generateAdminReportPDF = (
     
     // Title header
     doc.fillColor(accentColor).rect(50, 45, 8, 45).fill();
-    doc.fillColor(primaryColor).font('Helvetica-Bold').fontSize(22).text('ORGANIZATIONAL WELLBEING REPORT', 68, 46);
-    doc.fontSize(10).font('Helvetica').fillColor(secondaryColor).text(`Aggregated Organization Analytics`, 68, 68);
+    doc.fillColor(primaryColor).font('Helvetica-Bold').fontSize(22).text(data.departmentName ? `${data.departmentName.toUpperCase()} WELLBEING REPORT` : 'ORGANIZATIONAL WELLBEING REPORT', 68, 46);
+    doc.fontSize(10).font('Helvetica').fillColor(secondaryColor).text(data.departmentName ? 'Department Analytics' : 'Aggregated Organization Analytics', 68, 68);
     doc.text(`Period: ${dateRangeText}`, 68, 80);
     doc.moveDown(2);
 
@@ -375,7 +376,7 @@ export const generateAdminReportPDF = (
           doc.roundedRect(390, kpiY, cardWidth, cardHeight, 6).fillAndStroke(lightGray, gridColor);
       
           // Card 1
-          doc.fillColor(secondaryColor).font('Helvetica-Bold').fontSize(7.5).text('COMPANY MOOD INDEX', 58, kpiY + 12);
+          doc.fillColor(secondaryColor).font('Helvetica-Bold').fontSize(7.5).text(data.departmentName ? 'DEPARTMENT MOOD INDEX' : 'COMPANY MOOD INDEX', 58, kpiY + 12);
           doc.fillColor(accentColor).font('Helvetica-Bold').fontSize(24).text(`${data.moodIndex.toFixed(1)}`, 58, kpiY + 24);
           
           // Add sub-trends inside Card 1 (e.g. This Month / Last Month / Overall)
@@ -413,10 +414,10 @@ export const generateAdminReportPDF = (
           const tblHeaderY = doc.y;
           doc.fillColor(secondaryColor).font('Helvetica-Bold').fontSize(8);
           doc.text('Department', 55, tblHeaderY);
-          doc.text('This Month', 210, tblHeaderY);
-          doc.text('Last Month', 300, tblHeaderY);
-          doc.text('Overall Avg', 390, tblHeaderY);
-          doc.text('Participation', 480, tblHeaderY);
+          doc.text('This Month', 240, tblHeaderY);
+          doc.text('Last Month', 320, tblHeaderY);
+          doc.text('Overall Avg', 400, tblHeaderY);
+          doc.text('Participation', 475, tblHeaderY);
       
           doc.strokeColor(gridColor).lineWidth(0.8).moveTo(50, tblHeaderY + 14).lineTo(545, tblHeaderY + 14).stroke();
       
@@ -432,11 +433,11 @@ export const generateAdminReportPDF = (
                 doc.fillColor('#fafafa').rect(50, rowY - 4, 495, 18).fill();
               }
               
-              doc.fillColor(primaryColor).font('Helvetica-Bold').fontSize(8.5).text(dept.name, 55, rowY);
-              doc.fillColor(accentColor).text(dept.thisMonthAvg ? dept.thisMonthAvg.toFixed(1) : '—', 210, rowY);
-              doc.fillColor(primaryColor).font('Helvetica').text(dept.lastMonthAvg ? dept.lastMonthAvg.toFixed(1) : '—', 300, rowY);
-              doc.fillColor(primaryColor).text(dept.overallAvg ? dept.overallAvg.toFixed(1) : '—', 390, rowY);
-              doc.fillColor(secondaryColor).text(`${dept.checkedIn} / ${dept.headcount} people`, 480, rowY);
+              doc.fillColor(primaryColor).font('Helvetica-Bold').fontSize(8.5).text(dept.name, 55, rowY, { width: 180, ellipsis: true });
+              doc.fillColor(accentColor).text(dept.thisMonthAvg ? dept.thisMonthAvg.toFixed(1) : '—', 240, rowY);
+              doc.fillColor(primaryColor).font('Helvetica').text(dept.lastMonthAvg ? dept.lastMonthAvg.toFixed(1) : '—', 320, rowY);
+              doc.fillColor(primaryColor).text(dept.overallAvg ? dept.overallAvg.toFixed(1) : '—', 400, rowY);
+              doc.fillColor(secondaryColor).text(`${dept.checkedIn} / ${dept.headcount} people`, 475, rowY);
               rowY += 18;
             });
           }

@@ -214,10 +214,12 @@ let filterClause = '';
   // Fetch company stats for this month, last month, overall
   const compStatsRes = await query(
     `SELECT 
-       ROUND(AVG(CASE WHEN created_at >= DATE_TRUNC('month', NOW()) THEN mood_score END), 1) as this_month_avg,
-       ROUND(AVG(CASE WHEN created_at >= DATE_TRUNC('month', NOW() - INTERVAL '1 month') AND created_at < DATE_TRUNC('month', NOW()) THEN mood_score END), 1) as last_month_avg,
-       ROUND(AVG(mood_score), 1) as overall_avg
-     FROM mood_entries`
+       ROUND(AVG(CASE WHEN m.created_at >= DATE_TRUNC('month', NOW()) THEN m.mood_score END), 1) as this_month_avg,
+       ROUND(AVG(CASE WHEN m.created_at >= DATE_TRUNC('month', NOW() - INTERVAL '1 month') AND m.created_at < DATE_TRUNC('month', NOW()) THEN m.mood_score END), 1) as last_month_avg,
+       ROUND(AVG(m.mood_score), 1) as overall_avg
+     FROM mood_entries m
+     JOIN users u ON m.user_id = u.id
+     WHERE 1=1 ${deptFilterUsers}`
   );
   const compStats = compStatsRes.rows[0];
   const thisMonthAvg = parseFloat(compStats.this_month_avg || '0') || null;
@@ -271,7 +273,8 @@ let filterClause = '';
   const trendsRes = await query(
     `SELECT DATE_TRUNC('week', m.created_at)::date as date, ROUND(AVG(mood_score), 1) as score
      FROM mood_entries m
-     WHERE 1=1 ${filterClause}
+     JOIN users u ON m.user_id = u.id
+     WHERE 1=1 ${filterClause}${deptFilterUsers}
      GROUP BY DATE_TRUNC('week', m.created_at)::date
      ORDER BY date ASC`,
     filterValues
@@ -289,6 +292,7 @@ let filterClause = '';
      FROM departments d
      LEFT JOIN users u ON u.department_id = d.id AND u.role_id = (SELECT id FROM roles WHERE name = 'employee')
      LEFT JOIN mood_entries m ON m.user_id = u.id
+     WHERE 1=1 ${options?.departments === 'specific' ? `AND d.name = '${options.deptId}'` : ''}
      GROUP BY d.name
      ORDER BY d.name ASC`,
     filterValues
@@ -302,7 +306,8 @@ let filterClause = '';
      FROM entry_feelings ef
      JOIN feelings f ON ef.feeling_id = f.id
      JOIN mood_entries m ON ef.entry_id = m.id
-     WHERE 1=1 ${filterClause}
+     JOIN users u ON m.user_id = u.id
+     WHERE 1=1 ${filterClause}${deptFilterUsers}
      GROUP BY f.name
      ORDER BY count DESC LIMIT 10`,
     filterValues
@@ -316,7 +321,8 @@ let filterClause = '';
      FROM entry_contributors ec
      JOIN contributors c ON ec.contributor_id = c.id
      JOIN mood_entries m ON ec.entry_id = m.id
-     WHERE 1=1 ${filterClause}
+     JOIN users u ON m.user_id = u.id
+     WHERE 1=1 ${filterClause}${deptFilterUsers}
      GROUP BY c.name
      ORDER BY count DESC LIMIT 10`,
     filterValues
@@ -446,6 +452,7 @@ let filterClause = '';
     filename = `Admin_Wellness_Report_${range}.pdf`;
 
     reportBuffer = await generateAdminReportPDF(rangeLabel, {
+      departmentName: options?.departments === 'specific' ? options.deptId : undefined,
       moodIndex,
       thisMonthAvg,
       lastMonthAvg,
