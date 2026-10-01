@@ -30,15 +30,15 @@ export const getTodayStatus = async (req: AuthenticatedRequest, res: Response) =
   try {
     const today = new Date();
     const dayOfWeek = today.getDay(); // 0 = Sunday, 1-4 = Mon-Thu, 5-6 = Fri-Sat
-    let isBlockedDay = dayOfWeek >= 1 && dayOfWeek <= 4;
-
-    if (isBlockedDay) {
-      const extendRes = await query("SELECT value FROM settings WHERE key = 'extend_data_entry'");
-      const isExtended = extendRes.rows.length > 0 && extendRes.rows[0].value === 'true';
-      if (isExtended) {
-        isBlockedDay = false;
-      }
+    const offsetDay = (dayOfWeek + 2) % 7;
+    let checkinWindowEnd = 2; // Default to Sunday
+    
+    const windowRes = await query("SELECT value FROM settings WHERE key = 'checkin_window_end'");
+    if (windowRes.rows.length > 0) {
+      checkinWindowEnd = parseInt(windowRes.rows[0].value, 10);
     }
+    
+    const isBlockedDay = offsetDay > checkinWindowEnd;
 
     const windowStart = getCurrentCheckinWindowStart(today);
 
@@ -78,18 +78,18 @@ export const createCheckin = async (req: AuthenticatedRequest, res: Response) =>
 
   const today = new Date();
   const dayOfWeek = today.getDay(); // 0 = Sunday, 1-4 = Mon-Thu, 5-6 = Fri-Sat
-  let isBlockedDay = dayOfWeek >= 1 && dayOfWeek <= 4;
-
-  if (isBlockedDay) {
-    const extendRes = await query("SELECT value FROM settings WHERE key = 'extend_data_entry'");
-    const isExtended = extendRes.rows.length > 0 && extendRes.rows[0].value === 'true';
-    if (isExtended) {
-      isBlockedDay = false;
-    }
+  const offsetDay = (dayOfWeek + 2) % 7;
+  let checkinWindowEnd = 2;
+  
+  const windowRes = await query("SELECT value FROM settings WHERE key = 'checkin_window_end'");
+  if (windowRes.rows.length > 0) {
+    checkinWindowEnd = parseInt(windowRes.rows[0].value, 10);
   }
+  
+  const isBlockedDay = offsetDay > checkinWindowEnd;
 
   if (isBlockedDay) {
-    return res.status(400).json({ error: 'Check-ins are only allowed Friday through Sunday.' });
+    return res.status(400).json({ error: 'Check-ins are not allowed on this day.' });
   }
 
   const { moodScore, feelings, contributors } = req.body;
