@@ -2,7 +2,7 @@ import cron from 'node-cron';
 import { query } from '../config/db';
 import { sendEmail, buildEmailTemplate } from './email';
 import { buildAndEmailAdminReport } from '../controllers/reports';
-import { getCurrentCheckinWindowStart } from '../controllers/checkins';
+import { getCurrentCheckinWindowStart, getCheckinWindowSettings } from '../controllers/checkins';
 
 const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
 
@@ -46,7 +46,8 @@ export const sendMorningReminders = async () => {
 export const sendAfternoonReminders = async () => {
   console.log('Running 4:00 PM Weekday Incomplete Check-in Reminder Cron Job...');
   try {
-    const windowStart = getCurrentCheckinWindowStart();
+    const { startDay } = await getCheckinWindowSettings();
+    const windowStart = getCurrentCheckinWindowStart(new Date(), startDay);
     const incompleteEmployees = await query(
       `SELECT u.email, u.full_name FROM users u
        JOIN roles r ON u.role_id = r.id

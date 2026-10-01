@@ -3,25 +3,34 @@ import { AuthenticatedRequest } from '../middleware/auth';
 import { query } from '../config/db';
 import { logAudit } from '../utils/audit';
 
-export function getCurrentCheckinWindowStart(today: Date = new Date()): Date {
-  const dayOfWeek = today.getDay(); // 0 = Sun, 1 = Mon, ..., 5 = Fri, 6 = Sat
+export async function getCheckinWindowSettings() {
+  const settingsRes = await query("SELECT key, value FROM settings WHERE key IN ('checkin_window_start', 'checkin_window_end')");
+  let startDay = 5; // Default Friday
+  let endDay = 2; // Default Sunday
+  settingsRes.rows.forEach(r => {
+    if (r.key === 'checkin_window_start') startDay = parseInt(r.value, 10);
+    if (r.key === 'checkin_window_end') endDay = parseInt(r.value, 10);
+  });
+  return { startDay, endDay };
+}
+
+export function isDayInWindow(day: number, startDay: number, endDay: number) {
+  if (startDay <= endDay) {
+    return day >= startDay && day <= endDay;
+  } else {
+    // Wraps around Saturday to Sunday
+    return day >= startDay || day <= endDay;
+  }
+}
+
+export function getCurrentCheckinWindowStart(today: Date, startDay: number): Date {
   const start = new Date(today);
   start.setHours(0, 0, 0, 0);
-  
-  if (dayOfWeek === 5) { // Friday
-    return start;
-  } else if (dayOfWeek === 6) { // Saturday
-    start.setDate(start.getDate() - 1);
-    return start;
-  } else if (dayOfWeek === 0) { // Sunday
-    start.setDate(start.getDate() - 2);
-    return start;
-  } else {
-    // Monday to Thursday (1 to 4): subtract (dayOfWeek + 2) days to go back to previous Friday
-    const daysToSubtract = dayOfWeek + 2;
-    start.setDate(start.getDate() - daysToSubtract);
-    return start;
-  }
+  const currentDay = today.getDay();
+  let diff = currentDay - startDay;
+  if (diff < 0) diff += 7;
+  start.setDate(start.getDate() - diff);
+  return start;
 }
 
 export const getTodayStatus = async (req: AuthenticatedRequest, res: Response) => {
@@ -29,18 +38,12 @@ export const getTodayStatus = async (req: AuthenticatedRequest, res: Response) =
 
   try {
     const today = new Date();
-    const dayOfWeek = today.getDay(); // 0 = Sunday, 1-4 = Mon-Thu, 5-6 = Fri-Sat
-    const offsetDay = (dayOfWeek + 2) % 7;
-    let checkinWindowEnd = 2; // Default to Sunday
+    const dayOfWeek = today.getDay();
     
-    const windowRes = await query("SELECT value FROM settings WHERE key = 'checkin_window_end'");
-    if (windowRes.rows.length > 0) {
-      checkinWindowEnd = parseInt(windowRes.rows[0].value, 10);
-    }
-    
-    const isBlockedDay = offsetDay > checkinWindowEnd;
+    const { startDay, endDay } = await getCheckinWindowSettings();
+    const isBlockedDay = !isDayInWindow(dayOfWeek, startDay, endDay);
 
-    const windowStart = getCurrentCheckinWindowStart(today);
+    const windowStart = getCurrentCheckinWindowStart(today, startDay);
 
     const checkinRes = await query(
       `SELECT id, mood_score, journal_text, created_at 
@@ -77,16 +80,10 @@ export const createCheckin = async (req: AuthenticatedRequest, res: Response) =>
   if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
 
   const today = new Date();
-  const dayOfWeek = today.getDay(); // 0 = Sunday, 1-4 = Mon-Thu, 5-6 = Fri-Sat
-  const offsetDay = (dayOfWeek + 2) % 7;
-  let checkinWindowEnd = 2;
+  const dayOfWeek = today.getDay();
   
-  const windowRes = await query("SELECT value FROM settings WHERE key = 'checkin_window_end'");
-  if (windowRes.rows.length > 0) {
-    checkinWindowEnd = parseInt(windowRes.rows[0].value, 10);
-  }
-  
-  const isBlockedDay = offsetDay > checkinWindowEnd;
+  const { startDay, endDay } = await getCheckinWindowSettings();
+  const isBlockedDay = !isDayInWindow(dayOfWeek, startDay, endDay);
 
   if (isBlockedDay) {
     return res.status(400).json({ error: 'Check-ins are not allowed on this day.' });
@@ -99,7 +96,7 @@ export const createCheckin = async (req: AuthenticatedRequest, res: Response) =>
   }
 
   try {
-    const windowStart = getCurrentCheckinWindowStart(today);
+    const windowStart = getCurrentCheckinWindowStart(today, startDay);
     const checkinRes = await query(
       `SELECT 1 FROM mood_entries 
        WHERE user_id = $1 AND created_at >= $2`,

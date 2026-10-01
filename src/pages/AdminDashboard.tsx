@@ -114,7 +114,7 @@ export const AdminDashboard: React.FC = () => {
   const [empDetails, setEmpDetails] = useState<any | null>(null);
 
   // Settings & Domains
-  const [settings, setSettings] = useState({ companyName: '', reminderTime: '', afternoonReminderTime: '', companyLogoUrl: '', emailConfiguration: { from: '' }, checkinWindowEnd: 2 });
+  const [settings, setSettings] = useState({ companyName: '', reminderTime: '', afternoonReminderTime: '', companyLogoUrl: '', emailConfiguration: { from: '' }, checkinWindowStart: 5, checkinWindowEnd: 2 });
   const [domains, setDomains] = useState<any[]>([]);
   const [newDomain, setNewDomain] = useState('');
   const [savingSettings, setSavingSettings] = useState(false);
@@ -611,7 +611,7 @@ export const AdminDashboard: React.FC = () => {
   const handleExportModalSubmit = async () => {
     setExportingWeek(true);
     try {
-      const response = await fetch('/api/admin/reports', {
+      const response = await fetch(`${API_URL}/admin/reports`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
         body: JSON.stringify({
@@ -1649,35 +1649,42 @@ export const AdminDashboard: React.FC = () => {
                           />
                         </div>
 
-                        <div className="py-3 space-y-3">
-                          <div className="flex justify-between items-center">
-                            <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                              Check-in Window Duration
+                        <div className="grid grid-cols-2 gap-4 py-2">
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                              Check-in Opens On
                             </label>
-                            <span className="text-blue-400 text-xs font-bold bg-blue-900/30 px-2 py-1 rounded">
-                              Closes {['Friday', 'Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday'][settings.checkinWindowEnd] || 'Sunday'} EOD
-                            </span>
+                            <select
+                              value={settings.checkinWindowStart}
+                              onChange={(e) => setSettings(prev => ({ ...prev, checkinWindowStart: parseInt(e.target.value, 10) }))}
+                              className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white"
+                            >
+                              <option value={0}>Sunday</option>
+                              <option value={1}>Monday</option>
+                              <option value={2}>Tuesday</option>
+                              <option value={3}>Wednesday</option>
+                              <option value={4}>Thursday</option>
+                              <option value={5}>Friday</option>
+                              <option value={6}>Saturday</option>
+                            </select>
                           </div>
-                          <p className="text-[10px] text-slate-500">Check-ins open every Friday morning. Drag to configure when they close.</p>
-                          <div className="relative pt-2 pb-4">
-                            <input
-                              type="range"
-                              min="0"
-                              max="6"
-                              step="1"
-                              value={settings.checkinWindowEnd || 0}
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                              Check-in Closes On EOD
+                            </label>
+                            <select
+                              value={settings.checkinWindowEnd}
                               onChange={(e) => setSettings(prev => ({ ...prev, checkinWindowEnd: parseInt(e.target.value, 10) }))}
-                              className="w-full accent-blue-600 h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer"
-                            />
-                            <div className="flex justify-between text-[10px] font-bold text-slate-500 uppercase mt-3">
-                              <span>Fri</span>
-                              <span>Sat</span>
-                              <span>Sun</span>
-                              <span>Mon</span>
-                              <span>Tue</span>
-                              <span>Wed</span>
-                              <span>Thu</span>
-                            </div>
+                              className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white"
+                            >
+                              <option value={0}>Sunday</option>
+                              <option value={1}>Monday</option>
+                              <option value={2}>Tuesday</option>
+                              <option value={3}>Wednesday</option>
+                              <option value={4}>Thursday</option>
+                              <option value={5}>Friday</option>
+                              <option value={6}>Saturday</option>
+                            </select>
                           </div>
                         </div>
 
