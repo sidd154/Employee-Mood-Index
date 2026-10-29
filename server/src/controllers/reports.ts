@@ -763,11 +763,15 @@ export const buildAndEmailAdminReport = async (
   const validUserId = uuidRegex.test(userId) ? userId : null;
 
   if (validUserId) {
-    await query(
-      `INSERT INTO reports (user_id, type, date_range, file_url) VALUES ($1, 'admin', $2, $3)`,
-      [validUserId, rangeLabel, filename]
-    );
-    await logAudit(validUserId, 'admin_report_sent', { range, exportType, deptName });
+    try {
+      await query(
+        `INSERT INTO reports (user_id, type, date_range, file_url) VALUES ($1, 'admin', $2, $3)`,
+        [validUserId, rangeLabel, filename]
+      );
+      await logAudit(validUserId, 'admin_report_sent', { range, exportType, deptName });
+    } catch (dbErr) {
+      console.warn('Could not record report log in database:', dbErr);
+    }
   }
 };
 
