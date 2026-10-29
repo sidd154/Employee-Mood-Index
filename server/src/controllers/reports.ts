@@ -11,6 +11,16 @@ export function getRangeLabel(range?: string, start?: string, end?: string): str
     const sObj = new Date(start);
     const eObj = new Date(end);
     if (!isNaN(sObj.getTime()) && !isNaN(eObj.getTime())) {
+      // Check if it represents an entire calendar month
+      const isStartOfMonth = sObj.getDate() === 1 || sObj.getUTCDate() === 1;
+      const lastDayOfEndMonth = new Date(eObj.getFullYear(), eObj.getMonth() + 1, 0).getDate();
+      const isEndOfMonth = Math.abs(eObj.getDate() - lastDayOfEndMonth) <= 1 || Math.abs(eObj.getUTCDate() - lastDayOfEndMonth) <= 1;
+      const isSameMonthAndYear = sObj.getMonth() === eObj.getMonth() && sObj.getFullYear() === eObj.getFullYear();
+
+      if (isStartOfMonth && isEndOfMonth && isSameMonthAndYear) {
+        return sObj.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+      }
+
       const sStr = sObj.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
       const eStr = eObj.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
       return `${sStr} – ${eStr}`;
@@ -120,15 +130,23 @@ export const requestEmployeeReport = async (req: AuthenticatedRequest, res: Resp
     const moodIndex = avgScore > 0 ? parseFloat(avgScore.toFixed(1)) : 7.0;
 
     // Monthly stats for this employee
+    const targetDate = endDate ? new Date(endDate) : new Date();
+    const targetYear = targetDate.getFullYear();
+    const targetMonth = targetDate.getMonth();
+    const targetMonthStart = new Date(targetYear, targetMonth, 1);
+    const targetMonthEnd = new Date(targetYear, targetMonth + 1, 0, 23, 59, 59, 999);
+    const prevMonthStart = new Date(targetYear, targetMonth - 1, 1);
+    const prevMonthEnd = new Date(targetYear, targetMonth, 0, 23, 59, 59, 999);
+
     const empStatsRes = await query(
       `SELECT 
-         ROUND(AVG(CASE WHEN created_at >= DATE_TRUNC('month', NOW()) THEN mood_score END), 1) as this_month_avg,
-         ROUND(AVG(CASE WHEN created_at >= DATE_TRUNC('month', NOW() - INTERVAL '1 month') AND created_at < DATE_TRUNC('month', NOW()) THEN mood_score END), 1) as last_month_avg,
+         ROUND(AVG(CASE WHEN created_at >= $2 AND created_at <= $3 THEN mood_score END), 1) as this_month_avg,
+         ROUND(AVG(CASE WHEN created_at >= $4 AND created_at <= $5 THEN mood_score END), 1) as last_month_avg,
          ROUND(AVG(mood_score), 1) as overall_avg,
-         COUNT(CASE WHEN created_at >= DATE_TRUNC('month', NOW()) THEN id END) as this_month_checkins
+         COUNT(CASE WHEN created_at >= $2 AND created_at <= $3 THEN id END) as this_month_checkins
        FROM mood_entries
        WHERE user_id = $1`,
-      [userId]
+      [userId, targetMonthStart, targetMonthEnd, prevMonthStart, prevMonthEnd]
     );
     const empStats = empStatsRes.rows[0];
     const thisMonthAvg = parseFloat(empStats?.this_month_avg || '0') || null;
@@ -136,7 +154,7 @@ export const requestEmployeeReport = async (req: AuthenticatedRequest, res: Resp
     const overallAvg = parseFloat(empStats?.overall_avg || '0') || null;
     const thisMonthCheckins = parseInt(empStats?.this_month_checkins || '0', 10);
 
-    const expectedCheckinsThisMonth = getExpectedCheckinsInMonth();
+    const expectedCheckinsThisMonth = getExpectedCheckinsInMonth(targetDate);
     const monthlyCompliance = Math.min(100, Math.round((thisMonthCheckins / expectedCheckinsThisMonth) * 100));
 
     // Score distribution (1 to 10)
@@ -203,15 +221,15 @@ export const requestEmployeeReport = async (req: AuthenticatedRequest, res: Resp
       const deptMoodRes = await query(
         `SELECT 
            ROUND(AVG(m.mood_score), 1) as range_avg,
-           ROUND(AVG(CASE WHEN m.created_at >= DATE_TRUNC('month', NOW()) THEN m.mood_score END), 1) as this_month_avg,
-           ROUND(AVG(CASE WHEN m.created_at >= DATE_TRUNC('month', NOW() - INTERVAL '1 month') AND m.created_at < DATE_TRUNC('month', NOW()) THEN m.mood_score END), 1) as last_month_avg,
+           ROUND(AVG(CASE WHEN m.created_at >= $2 AND m.created_at <= $3 THEN m.mood_score END), 1) as this_month_avg,
+           ROUND(AVG(CASE WHEN m.created_at >= $4 AND m.created_at <= $5 THEN m.mood_score END), 1) as last_month_avg,
            ROUND(AVG(m.mood_score), 1) as overall_avg,
            COUNT(DISTINCT u.id) as headcount,
-           COUNT(CASE WHEN m.created_at >= DATE_TRUNC('month', NOW()) THEN m.id END) as month_checkins
+           COUNT(CASE WHEN m.created_at >= $2 AND m.created_at <= $3 THEN m.id END) as month_checkins
          FROM users u
          LEFT JOIN mood_entries m ON m.user_id = u.id
          WHERE u.department_id = $1 AND u.role_id = (SELECT id FROM roles WHERE name = 'employee')`,
-        [departmentId]
+        [departmentId, targetMonthStart, targetMonthEnd, prevMonthStart, prevMonthEnd]
       );
 
       const dRow = deptMoodRes.rows[0];
@@ -348,15 +366,26 @@ export const buildAndEmailAdminReport = async (
   const avgScore = parseFloat(moodRes.rows[0]?.avg_score || '0');
   const moodIndex = avgScore > 0 ? parseFloat(avgScore.toFixed(1)) : 7.0;
 
+  // Compute target month boundaries (supports any past or current month!)
+  const targetDate = endDate ? new Date(endDate) : new Date();
+  const targetYear = targetDate.getFullYear();
+  const targetMonth = targetDate.getMonth();
+
+  const targetMonthStart = new Date(targetYear, targetMonth, 1);
+  const targetMonthEnd = new Date(targetYear, targetMonth + 1, 0, 23, 59, 59, 999);
+  const prevMonthStart = new Date(targetYear, targetMonth - 1, 1);
+  const prevMonthEnd = new Date(targetYear, targetMonth, 0, 23, 59, 59, 999);
+
   // 2. Comparison averages: This Month / Last Month / Overall
   const compStatsRes = await query(
     `SELECT 
-       ROUND(AVG(CASE WHEN m.created_at >= DATE_TRUNC('month', NOW()) THEN m.mood_score END), 1) as this_month_avg,
-       ROUND(AVG(CASE WHEN m.created_at >= DATE_TRUNC('month', NOW() - INTERVAL '1 month') AND m.created_at < DATE_TRUNC('month', NOW()) THEN m.mood_score END), 1) as last_month_avg,
+       ROUND(AVG(CASE WHEN m.created_at >= $1 AND m.created_at <= $2 THEN m.mood_score END), 1) as this_month_avg,
+       ROUND(AVG(CASE WHEN m.created_at >= $3 AND m.created_at <= $4 THEN m.mood_score END), 1) as last_month_avg,
        ROUND(AVG(m.mood_score), 1) as overall_avg
      FROM mood_entries m
      JOIN users u ON m.user_id = u.id
-     WHERE 1=1 ${deptFilterEntries}`
+     WHERE 1=1 ${deptFilterEntries}`,
+    [targetMonthStart, targetMonthEnd, prevMonthStart, prevMonthEnd]
   );
   const compStats = compStatsRes.rows[0];
   const thisMonthAvg = parseFloat(compStats?.this_month_avg || '0') || null;
@@ -382,8 +411,8 @@ export const buildAndEmailAdminReport = async (
   );
   const totalEmployees = Math.max(1, parseInt(empCountRes.rows[0]?.count || '0', 10));
 
-  // 5. Monthly Check-in Performance (Crucial user requirement: "how much for the month they have done")
-  const expectedCheckinsThisMonth = getExpectedCheckinsInMonth();
+  // 5. Monthly Check-in Performance for the target month
+  const expectedCheckinsThisMonth = getExpectedCheckinsInMonth(targetDate);
   const monthExpectedTotal = totalEmployees * expectedCheckinsThisMonth;
 
   const monthlyCheckinRes = await query(
@@ -392,7 +421,8 @@ export const buildAndEmailAdminReport = async (
        COUNT(DISTINCT m.user_id) as active_users
      FROM mood_entries m
      JOIN users u ON m.user_id = u.id
-     WHERE m.created_at >= DATE_TRUNC('month', NOW())${deptFilterEntries}`
+     WHERE m.created_at >= $1 AND m.created_at <= $2 ${deptFilterEntries}`,
+    [targetMonthStart, targetMonthEnd]
   );
   const monthCheckinsTotal = parseInt(monthlyCheckinRes.rows[0]?.month_checkins || '0', 10);
   const monthActiveEmployees = parseInt(monthlyCheckinRes.rows[0]?.active_users || '0', 10);
@@ -438,23 +468,24 @@ export const buildAndEmailAdminReport = async (
     filter.values
   );
 
-  // 8. Department Breakdown with Monthly Check-ins!
+  // 8. Department Breakdown with Monthly Check-ins for target month!
   const deptWhere = isSpecificDept ? `WHERE d.name = '${options.deptId}'` : '';
   const deptStatsRes = await query(
     `SELECT 
        d.name,
        COUNT(DISTINCT u.id) as headcount,
-       COUNT(CASE WHEN m.created_at >= DATE_TRUNC('month', NOW()) THEN m.id END) as this_month_checkins,
-       COUNT(DISTINCT CASE WHEN m.created_at >= DATE_TRUNC('month', NOW()) THEN u.id END) as active_members,
-       ROUND(AVG(CASE WHEN m.created_at >= DATE_TRUNC('month', NOW()) THEN m.mood_score END), 1) as this_month_avg,
-       ROUND(AVG(CASE WHEN m.created_at >= DATE_TRUNC('month', NOW() - INTERVAL '1 month') AND m.created_at < DATE_TRUNC('month', NOW()) THEN m.mood_score END), 1) as last_month_avg,
+       COUNT(CASE WHEN m.created_at >= $1 AND m.created_at <= $2 THEN m.id END) as this_month_checkins,
+       COUNT(DISTINCT CASE WHEN m.created_at >= $1 AND m.created_at <= $2 THEN u.id END) as active_members,
+       ROUND(AVG(CASE WHEN m.created_at >= $1 AND m.created_at <= $2 THEN m.mood_score END), 1) as this_month_avg,
+       ROUND(AVG(CASE WHEN m.created_at >= $3 AND m.created_at <= $4 THEN m.mood_score END), 1) as last_month_avg,
        ROUND(AVG(m.mood_score), 1) as overall_avg
      FROM departments d
      LEFT JOIN users u ON u.department_id = d.id AND u.role_id = (SELECT id FROM roles WHERE name = 'employee')
      LEFT JOIN mood_entries m ON m.user_id = u.id
      ${deptWhere}
      GROUP BY d.name
-     ORDER BY d.name ASC`
+     ORDER BY d.name ASC`,
+    [targetMonthStart, targetMonthEnd, prevMonthStart, prevMonthEnd]
   );
 
   const departments = deptStatsRes.rows.map((row) => {
@@ -511,6 +542,20 @@ export const buildAndEmailAdminReport = async (
   const now = endDate ? new Date(endDate) : new Date();
   const generatePeriods = (count = 4) => {
     const list = [];
+    if (groupBy === 'months') {
+      for (let i = 0; i < count; i++) {
+        const d = new Date(targetYear, targetMonth - i, 1);
+        const startM = new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
+        const endM = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
+        list.push({
+          label: startM.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }),
+          start: startM.toISOString(),
+          end: endM.toISOString(),
+        });
+      }
+      return list;
+    }
+
     const curWeek = new Date(now);
     const day = curWeek.getDay();
     let diff = 0;
@@ -546,8 +591,8 @@ export const buildAndEmailAdminReport = async (
        u.full_name as name, 
        u.email, 
        COALESCE(d.name, 'Unassigned') as department,
-       COUNT(CASE WHEN m.created_at >= DATE_TRUNC('month', NOW()) THEN m.id END) as this_month_checkins,
-       ROUND(AVG(CASE WHEN m.created_at >= DATE_TRUNC('month', NOW()) THEN m.mood_score END), 1) as this_month_avg,
+       COUNT(CASE WHEN m.created_at >= $1 AND m.created_at <= $2 THEN m.id END) as this_month_checkins,
+       ROUND(AVG(CASE WHEN m.created_at >= $1 AND m.created_at <= $2 THEN m.mood_score END), 1) as this_month_avg,
        ROUND(AVG(m.mood_score), 1) as overall_avg,
        COALESCE(
          JSON_AGG(
@@ -561,17 +606,20 @@ export const buildAndEmailAdminReport = async (
      LEFT JOIN mood_entries m ON m.user_id = u.id
      WHERE r.name = 'employee' AND u.full_name IS NOT NULL${deptFilterUsers}
      GROUP BY u.id, u.full_name, u.email, d.name
-     ORDER BY department ASC, u.full_name ASC`
+     ORDER BY department ASC, u.full_name ASC`,
+    [targetMonthStart, targetMonthEnd]
   );
 
   const getScoreInPeriod = (hist: any[], startIso: string, endIso: string) => {
     const s = new Date(startIso).getTime();
     const e = new Date(endIso).getTime();
-    const match = hist.find((h: any) => {
+    const matches = hist.filter((h: any) => {
       const t = new Date(h.date).getTime();
       return t >= s && t <= e;
     });
-    return match ? match.score : null;
+    if (matches.length === 0) return null;
+    const sum = matches.reduce((acc: number, m: any) => acc + Number(m.score), 0);
+    return Math.round((sum / matches.length) * 10) / 10;
   };
 
   const employeeDetails = employeesRes.rows.map((row) => {

@@ -90,6 +90,35 @@ export const AdminDashboard: React.FC = () => {
     setSelectedStartPeriod(p[0]);
     setSelectedEndPeriod(p[0]);
   }, [groupBy]);
+
+  // Export reporting timeframe state
+  const [exportCadence, setExportCadence] = useState<'month' | 'weeks' | 'ytd' | 'custom'>('month');
+
+  // Month options for the last 12 months
+  const monthExportOptions = React.useMemo(() => {
+    const list = [];
+    const now = new Date();
+    for (let i = 0; i < 12; i++) {
+      const start = new Date(now.getFullYear(), now.getMonth() - i, 1, 0, 0, 0, 0);
+      const end = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59, 999);
+      const label = start.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+      list.push({
+        id: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}`,
+        label: i === 0 ? `${label} (Current Month)` : label,
+        monthName: label,
+        start: start.toISOString(),
+        end: end.toISOString()
+      });
+    }
+    return list;
+  }, []);
+
+  const [selectedExportMonth, setSelectedExportMonth] = useState<string>(monthExportOptions[0]?.id || '');
+  const [exportStartWeek, setExportStartWeek] = useState(periods[0]?.start || '');
+  const [exportEndWeek, setExportEndWeek] = useState(periods[0]?.end || '');
+  const [customExportStartDate, setCustomExportStartDate] = useState('');
+  const [customExportEndDate, setCustomExportEndDate] = useState('');
+
   const [exportingWeek, setExportingWeek] = useState(false);
   const [stats, setStats] = useState({ moodIndex: 0, totalEmployees: 0, participationRate: 0, checkinsToday: 0 });
   const [trends, setTrends] = useState<any[]>([]);
@@ -607,28 +636,57 @@ export const AdminDashboard: React.FC = () => {
 
 
 
-  // Trigger Specific Week Report
+  // Trigger Report Generation and Email
   const handleExportModalSubmit = async () => {
     setExportingWeek(true);
     try {
+      let reqRange = 'custom';
+      let startDate: string | undefined = undefined;
+      let endDate: string | undefined = undefined;
+      let exportGroupBy: 'weeks' | 'months' = 'weeks';
+
+      if (exportCadence === 'month') {
+        const m = monthExportOptions.find((opt) => opt.id === selectedExportMonth) || monthExportOptions[0];
+        startDate = m.start;
+        endDate = m.end;
+        exportGroupBy = 'months';
+      } else if (exportCadence === 'weeks') {
+        startDate = exportStartWeek || periods[0]?.start;
+        endDate = exportEndWeek || periods[0]?.end;
+        exportGroupBy = 'weeks';
+      } else if (exportCadence === 'ytd') {
+        reqRange = 'ytd';
+        exportGroupBy = 'months';
+      } else if (exportCadence === 'custom') {
+        if (!customExportStartDate || !customExportEndDate) {
+          alert('Please specify both a start date and an end date.');
+          setExportingWeek(false);
+          return;
+        }
+        startDate = new Date(customExportStartDate).toISOString();
+        endDate = new Date(`${customExportEndDate}T23:59:59.999Z`).toISOString();
+        exportGroupBy = 'weeks';
+      }
+
       const response = await fetch(`${API_URL}/reports/admin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
         body: JSON.stringify({
-          range: 'custom',
-          startDate: selectedStartPeriod.start,
-          endDate: selectedEndPeriod.end,
+          range: reqRange,
+          startDate,
+          endDate,
           exportType: exportModalState.format,
-          groupBy: groupBy,
-          options: exportModalState
+          groupBy: exportGroupBy,
+          options: exportModalState,
         }),
       });
 
       if (response.ok) {
-        alert('Report exported successfully! Please check your email inbox.');
-
+        const data = await response.json();
+        alert(data.message || `Report generated and sent to ${user?.email || 'your email'} successfully!`);
       } else {
-        alert('Failed to generate report.');
+        const data = await response.json().catch(() => ({}));
+        alert(data.error || 'Failed to generate report.');
       }
     } catch (error) {
       console.error('Export error', error);
@@ -1355,9 +1413,172 @@ export const AdminDashboard: React.FC = () => {
 
                   <div className="w-full max-w-2xl glass p-6 rounded-2xl border border-slate-900 space-y-8">
                     
-                    {/* 1. Format */}
+                    {/* 1. Timeframe & Reporting Cadence */}
                     <div className="space-y-3">
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">File Format</label>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                        1. Reporting Timeframe & Cadence
+                      </label>
+                      
+                      {/* Cadence Selector Cards */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setExportCadence('month')}
+                          className={`p-3 rounded-xl text-left border transition-all flex flex-col justify-between ${
+                            exportCadence === 'month'
+                              ? 'bg-blue-600/15 border-blue-500 shadow-sm shadow-blue-500/20'
+                              : 'bg-slate-900/50 border-slate-800 hover:bg-slate-850 hover:border-slate-700'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between w-full mb-1">
+                            <span className={`text-xs font-bold ${exportCadence === 'month' ? 'text-blue-400' : 'text-slate-200'}`}>
+                              Monthly
+                            </span>
+                            <span className={`w-2 h-2 rounded-full ${exportCadence === 'month' ? 'bg-blue-500' : 'bg-slate-700'}`}></span>
+                          </div>
+                          <span className="text-[10px] text-slate-400">Specific calendar month</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setExportCadence('weeks')}
+                          className={`p-3 rounded-xl text-left border transition-all flex flex-col justify-between ${
+                            exportCadence === 'weeks'
+                              ? 'bg-blue-600/15 border-blue-500 shadow-sm shadow-blue-500/20'
+                              : 'bg-slate-900/50 border-slate-800 hover:bg-slate-850 hover:border-slate-700'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between w-full mb-1">
+                            <span className={`text-xs font-bold ${exportCadence === 'weeks' ? 'text-blue-400' : 'text-slate-200'}`}>
+                              Weekly Range
+                            </span>
+                            <span className={`w-2 h-2 rounded-full ${exportCadence === 'weeks' ? 'bg-blue-500' : 'bg-slate-700'}`}></span>
+                          </div>
+                          <span className="text-[10px] text-slate-400">Between check-in cycles</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setExportCadence('ytd')}
+                          className={`p-3 rounded-xl text-left border transition-all flex flex-col justify-between ${
+                            exportCadence === 'ytd'
+                              ? 'bg-blue-600/15 border-blue-500 shadow-sm shadow-blue-500/20'
+                              : 'bg-slate-900/50 border-slate-800 hover:bg-slate-850 hover:border-slate-700'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between w-full mb-1">
+                            <span className={`text-xs font-bold ${exportCadence === 'ytd' ? 'text-blue-400' : 'text-slate-200'}`}>
+                              Year to Date
+                            </span>
+                            <span className={`w-2 h-2 rounded-full ${exportCadence === 'ytd' ? 'bg-blue-500' : 'bg-slate-700'}`}></span>
+                          </div>
+                          <span className="text-[10px] text-slate-400">Jan 1 to today</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setExportCadence('custom')}
+                          className={`p-3 rounded-xl text-left border transition-all flex flex-col justify-between ${
+                            exportCadence === 'custom'
+                              ? 'bg-blue-600/15 border-blue-500 shadow-sm shadow-blue-500/20'
+                              : 'bg-slate-900/50 border-slate-800 hover:bg-slate-850 hover:border-slate-700'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between w-full mb-1">
+                            <span className={`text-xs font-bold ${exportCadence === 'custom' ? 'text-blue-400' : 'text-slate-200'}`}>
+                              Custom Range
+                            </span>
+                            <span className={`w-2 h-2 rounded-full ${exportCadence === 'custom' ? 'bg-blue-500' : 'bg-slate-700'}`}></span>
+                          </div>
+                          <span className="text-[10px] text-slate-400">Custom date interval</span>
+                        </button>
+                      </div>
+
+                      {/* Sub-Selector for Monthly */}
+                      {exportCadence === 'month' && (
+                        <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800 space-y-2 mt-3">
+                          <label className="block text-[11px] font-semibold text-slate-300">
+                            Select Month to Export
+                          </label>
+                          <select
+                            value={selectedExportMonth}
+                            onChange={(e) => setSelectedExportMonth(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:border-blue-500"
+                          >
+                            {monthExportOptions.map((opt) => (
+                              <option key={opt.id} value={opt.id}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="text-[11px] text-slate-500">
+                            Computes monthly check-in compliance, weekly rating trends, and employee breakdown for the full selected month.
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Sub-Selector for Weekly Range */}
+                      {exportCadence === 'weeks' && (
+                        <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800 space-y-3 mt-3">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-[11px] font-semibold text-slate-300 mb-1.5">From Week</label>
+                              <select
+                                value={exportStartWeek}
+                                onChange={(e) => setExportStartWeek(e.target.value)}
+                                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white"
+                              >
+                                {periods.map((p, idx) => (
+                                  <option key={idx} value={p.start}>{p.label}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-semibold text-slate-300 mb-1.5">To Week</label>
+                              <select
+                                value={exportEndWeek}
+                                onChange={(e) => setExportEndWeek(e.target.value)}
+                                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white"
+                              >
+                                {periods.map((p, idx) => (
+                                  <option key={idx} value={p.end}>{p.label}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Sub-Selector for Custom Range */}
+                      {exportCadence === 'custom' && (
+                        <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800 space-y-3 mt-3">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-[11px] font-semibold text-slate-300 mb-1.5">Start Date</label>
+                              <input
+                                type="date"
+                                value={customExportStartDate}
+                                onChange={(e) => setCustomExportStartDate(e.target.value)}
+                                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-semibold text-slate-300 mb-1.5">End Date</label>
+                              <input
+                                type="date"
+                                value={customExportEndDate}
+                                onChange={(e) => setCustomExportEndDate(e.target.value)}
+                                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* 2. Format */}
+                    <div className="space-y-3">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">2. File Format</label>
                       <div className="flex gap-4">
                         <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer bg-slate-900/50 px-4 py-3 rounded-xl border border-slate-800 flex-1 hover:bg-slate-800 transition-colors">
                           <input type="radio" name="em_format" checked={exportModalState.format === 'pdf'} onChange={() => setExportModalState({...exportModalState, format: 'pdf'})} className="accent-blue-500" />
@@ -1370,9 +1591,9 @@ export const AdminDashboard: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* 2. Target Audience (Who) */}
+                    {/* 3. Target Audience (Who) */}
                     <div className="space-y-3">
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Target Data</label>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">3. Target Data Scope</label>
                       <select
                         value={exportModalState.departments}
                         onChange={(e) => setExportModalState({...exportModalState, departments: e.target.value, deptId: ''})}
@@ -1396,9 +1617,9 @@ export const AdminDashboard: React.FC = () => {
                       )}
                     </div>
 
-                    {/* 3. Sections to Include */}
+                    {/* 4. Sections to Include */}
                     <div className="space-y-3">
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Sections to Include</label>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">4. Sections to Include</label>
                       <div className="space-y-3 bg-slate-900/50 p-5 rounded-xl border border-slate-800">
                         <label className="flex items-center gap-3 text-xs text-slate-300 cursor-pointer">
                           <input type="checkbox" checked={exportModalState.sections.summary} onChange={(e) => setExportModalState({...exportModalState, sections: {...exportModalState.sections, summary: e.target.checked}})} className="accent-blue-500 rounded h-4 w-4" />
@@ -1419,13 +1640,33 @@ export const AdminDashboard: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="pt-4 flex justify-end">
+                    {/* Footer Actions */}
+                    <div className="pt-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-t border-slate-800/80">
+                      <div className="text-xs text-slate-400 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                        <span>Will be emailed to: <strong className="text-white">{user?.email}</strong></span>
+                      </div>
                       <button
                         onClick={handleExportModalSubmit}
                         disabled={exportingWeek || (exportModalState.departments === 'specific' && !exportModalState.deptId)}
-                        className="bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 text-white px-8 py-3 rounded-xl text-xs font-bold transition-all shadow-lg shadow-blue-500/20"
+                        className="bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 text-white px-8 py-3 rounded-xl text-xs font-bold transition-all shadow-lg shadow-blue-500/20 flex items-center gap-2 cursor-pointer disabled:cursor-not-allowed"
                       >
-                        {exportingWeek ? 'Generating Report...' : 'Download Report'}
+                        {exportingWeek ? (
+                          <>
+                            <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                            </svg>
+                            Generating & Sending...
+                          </>
+                        ) : (
+                          <>
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" />
+                            </svg>
+                            Generate & Send Report
+                          </>
+                        )}
                       </button>
                     </div>
 

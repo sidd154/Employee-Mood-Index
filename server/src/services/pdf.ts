@@ -800,7 +800,7 @@ export const generateAdminReportPDF = (
           const pWidth = 180 / Math.max(1, maxCols);
           for (let i = 0; i < maxCols; i++) {
             const p = periods[i];
-            const pLabel = p ? p.label.split(' - ')[0] : `P${i + 1}`;
+            const pLabel = p ? (p.label.includes(' – ') ? p.label.split(' – ')[0] : (p.label.includes(' - ') ? p.label.split(' - ')[0] : p.label)) : `P${i + 1}`;
             doc.text(pLabel, pStartX + i * pWidth, y + 5, { width: pWidth, align: 'center' });
           }
 
