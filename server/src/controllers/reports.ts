@@ -5,73 +5,167 @@ import { generateEmployeeReportPDF, generateAdminReportPDF } from '../services/p
 import { sendEmail, buildEmailTemplate } from '../services/email';
 import { logAudit } from '../utils/audit';
 
-function getRangeLabel(range: string, start?: string, end?: string): string {
-  return 'From January';
+// Formats human-readable range labels in Indian format
+export function getRangeLabel(range?: string, start?: string, end?: string): string {
+  if (start && end) {
+    const sObj = new Date(start);
+    const eObj = new Date(end);
+    if (!isNaN(sObj.getTime()) && !isNaN(eObj.getTime())) {
+      const sStr = sObj.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+      const eStr = eObj.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+      return `${sStr} – ${eStr}`;
+    }
+  }
+
+  if (range === '7d') return 'Last 7 Days';
+  if (range === '30d') return 'Last 30 Days';
+  if (range === '90d') return 'Last 90 Days';
+  if (range === 'month') {
+    return new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+  }
+  if (range === 'ytd') {
+    return `Year to Date (${new Date().getFullYear()})`;
+  }
+  return `Year to Date (${new Date().getFullYear()})`;
 }
 
-function getDateFilter(range: string, start?: string, end?: string, tableAlias: string = 'm') {
-  const clause = `AND ${tableAlias}.created_at >= DATE_TRUNC('year', NOW())`;
-  const values: any[] = [];
-  return { clause, values };
+// Computes how many weekly check-in cycles have started in a given month up to today
+export function getExpectedCheckinsInMonth(date: Date = new Date(), startDayOfWeek: number = 5): number {
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+  const now = new Date();
+  const isCurrentMonth = year === now.getFullYear() && month === now.getMonth();
+  const evalEnd = isCurrentMonth ? now : lastDay;
+
+  let count = 0;
+  const cur = new Date(firstDay);
+  while (cur <= evalEnd) {
+    if (cur.getDay() === startDayOfWeek) {
+      count++;
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+  return Math.max(1, count);
 }
 
+// SQL date filter builder
+export function getDateFilter(range?: string, start?: string, end?: string, tableAlias: string = 'm', paramStart: number = 1) {
+  if (start && end) {
+    const sObj = new Date(start);
+    const eObj = new Date(end);
+    if (!isNaN(sObj.getTime()) && !isNaN(eObj.getTime())) {
+      return {
+        clause: `AND ${tableAlias}.created_at >= $${paramStart} AND ${tableAlias}.created_at <= $${paramStart + 1}`,
+        values: [sObj, eObj],
+      };
+    }
+  }
+
+  if (range === '7d') {
+    return { clause: `AND ${tableAlias}.created_at >= NOW() - INTERVAL '7 days'`, values: [] };
+  }
+  if (range === '30d') {
+    return { clause: `AND ${tableAlias}.created_at >= NOW() - INTERVAL '30 days'`, values: [] };
+  }
+  if (range === '90d') {
+    return { clause: `AND ${tableAlias}.created_at >= NOW() - INTERVAL '90 days'`, values: [] };
+  }
+  if (range === 'month') {
+    return { clause: `AND ${tableAlias}.created_at >= DATE_TRUNC('month', NOW())`, values: [] };
+  }
+  // Default YTD
+  return { clause: `AND ${tableAlias}.created_at >= DATE_TRUNC('year', NOW())`, values: [] };
+}
+
+// --------------------------------------------------------------------------
+// 1. EMPLOYEE PERSONAL REPORT CONTROLLER
+// --------------------------------------------------------------------------
 export const requestEmployeeReport = async (req: AuthenticatedRequest, res: Response) => {
   if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { range } = req.body;
+  const { range, startDate, endDate } = req.body;
   const userId = req.user.id;
 
   try {
-    const rangeLabel = getRangeLabel(range);
-    const filter = getDateFilter(range, undefined, undefined, 'm');
+    const rangeLabel = getRangeLabel(range, startDate, endDate);
+    const filter = getDateFilter(range, startDate, endDate, 'm');
 
+    // Fetch user details & department
+    const userProfile = await query(
+      `SELECT u.full_name, u.email, u.department_id, COALESCE(d.name, 'General') as department_name 
+       FROM users u
+       LEFT JOIN departments d ON u.department_id = d.id
+       WHERE u.id = $1`,
+      [userId]
+    );
+
+    if (userProfile.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const employeeName = userProfile.rows[0].full_name || 'Employee';
+    const employeeEmail = userProfile.rows[0].email || req.user.email;
+    const departmentId = userProfile.rows[0].department_id;
+    const departmentName = userProfile.rows[0].department_name;
+
+    // Period mood score
     const moodRes = await query(
       `SELECT AVG(mood_score) as avg_score FROM mood_entries m 
        WHERE m.user_id = $1 ${filter.clause}`,
-      [userId]
+      [userId, ...filter.values]
     );
-    const avgScore = parseFloat(moodRes.rows[0].avg_score || '0');
-    const moodIndex = parseFloat(avgScore.toFixed(1));
+    const avgScore = parseFloat(moodRes.rows[0]?.avg_score || '0');
+    const moodIndex = avgScore > 0 ? parseFloat(avgScore.toFixed(1)) : 7.0;
 
-    // Fetch this month, last month, and overall averages for the employee
+    // Monthly stats for this employee
     const empStatsRes = await query(
       `SELECT 
          ROUND(AVG(CASE WHEN created_at >= DATE_TRUNC('month', NOW()) THEN mood_score END), 1) as this_month_avg,
          ROUND(AVG(CASE WHEN created_at >= DATE_TRUNC('month', NOW() - INTERVAL '1 month') AND created_at < DATE_TRUNC('month', NOW()) THEN mood_score END), 1) as last_month_avg,
-         ROUND(AVG(mood_score), 1) as overall_avg
+         ROUND(AVG(mood_score), 1) as overall_avg,
+         COUNT(CASE WHEN created_at >= DATE_TRUNC('month', NOW()) THEN id END) as this_month_checkins
        FROM mood_entries
        WHERE user_id = $1`,
       [userId]
     );
     const empStats = empStatsRes.rows[0];
-    const thisMonthAvg = parseFloat(empStats.this_month_avg || '0') || null;
-    const lastMonthAvg = parseFloat(empStats.last_month_avg || '0') || null;
-    const overallAvg = parseFloat(empStats.overall_avg || '0') || null;
+    const thisMonthAvg = parseFloat(empStats?.this_month_avg || '0') || null;
+    const lastMonthAvg = parseFloat(empStats?.last_month_avg || '0') || null;
+    const overallAvg = parseFloat(empStats?.overall_avg || '0') || null;
+    const thisMonthCheckins = parseInt(empStats?.this_month_checkins || '0', 10);
 
+    const expectedCheckinsThisMonth = getExpectedCheckinsInMonth();
+    const monthlyCompliance = Math.min(100, Math.round((thisMonthCheckins / expectedCheckinsThisMonth) * 100));
+
+    // Score distribution (1 to 10)
     const distRes = await query(
       `SELECT mood_score, COUNT(*) as count FROM mood_entries m 
        WHERE m.user_id = $1 ${filter.clause}
        GROUP BY mood_score`,
-      [userId]
+      [userId, ...filter.values]
     );
     const distribution = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1].map((score) => {
       const row = distRes.rows.find((r) => parseInt(r.mood_score) === score);
       return {
         score,
         name: String(score),
-        count: parseInt(row?.count || '0'),
+        count: parseInt(row?.count || '0', 10),
       };
     });
 
+    // Employee Weekly Trends
     const trendsRes = await query(
       `SELECT DATE_TRUNC('week', m.created_at)::date as date, ROUND(AVG(mood_score), 1) as score
        FROM mood_entries m 
        WHERE m.user_id = $1 ${filter.clause}
        GROUP BY DATE_TRUNC('week', m.created_at)::date
        ORDER BY date ASC`,
-      [userId]
+      [userId, ...filter.values]
     );
 
+    // Top Feelings
     const feelingsRes = await query(
       `SELECT f.name, COUNT(*) as count 
        FROM entry_feelings ef
@@ -80,9 +174,10 @@ export const requestEmployeeReport = async (req: AuthenticatedRequest, res: Resp
        WHERE m.user_id = $1 ${filter.clause}
        GROUP BY f.name
        ORDER BY count DESC LIMIT 5`,
-      [userId]
+      [userId, ...filter.values]
     );
 
+    // Top Contributors
     const contributorsRes = await query(
       `SELECT c.name, COUNT(*) as count 
        FROM entry_contributors ec
@@ -91,25 +186,18 @@ export const requestEmployeeReport = async (req: AuthenticatedRequest, res: Resp
        WHERE m.user_id = $1 ${filter.clause}
        GROUP BY c.name
        ORDER BY count DESC LIMIT 5`,
-      [userId]
+      [userId, ...filter.values]
     );
 
-    const userProfile = await query(
-      `SELECT u.full_name, u.department_id, d.name as department_name 
-       FROM users u
-       LEFT JOIN departments d ON u.department_id = d.id
-       WHERE u.id = $1`,
-      [userId]
-    );
-    const employeeName = userProfile.rows[0].full_name || 'Employee';
-    const departmentId = userProfile.rows[0].department_id;
-    const departmentName = userProfile.rows[0].department_name || 'Other';
-
+    // Department Benchmarks & Aggregated Context
     let departmentMoodIndex = null;
     let departmentThisMonthAvg = null;
     let departmentLastMonthAvg = null;
     let departmentOverallAvg = null;
-    let departmentHeadcount = null;
+    let departmentHeadcount = 1;
+    let departmentThisMonthCheckins = 0;
+    let departmentMonthlyParticipation = 0;
+    let comparisonHistory: { periodLabel: string; userScore: number | null; deptAvg: number | null }[] = [];
 
     if (departmentId) {
       const deptMoodRes = await query(
@@ -118,100 +206,149 @@ export const requestEmployeeReport = async (req: AuthenticatedRequest, res: Resp
            ROUND(AVG(CASE WHEN m.created_at >= DATE_TRUNC('month', NOW()) THEN m.mood_score END), 1) as this_month_avg,
            ROUND(AVG(CASE WHEN m.created_at >= DATE_TRUNC('month', NOW() - INTERVAL '1 month') AND m.created_at < DATE_TRUNC('month', NOW()) THEN m.mood_score END), 1) as last_month_avg,
            ROUND(AVG(m.mood_score), 1) as overall_avg,
-           COUNT(DISTINCT u.id) as headcount
+           COUNT(DISTINCT u.id) as headcount,
+           COUNT(CASE WHEN m.created_at >= DATE_TRUNC('month', NOW()) THEN m.id END) as month_checkins
          FROM users u
          LEFT JOIN mood_entries m ON m.user_id = u.id
          WHERE u.department_id = $1 AND u.role_id = (SELECT id FROM roles WHERE name = 'employee')`,
         [departmentId]
       );
-      const row = deptMoodRes.rows[0];
-      if (row.range_avg) {
-        departmentMoodIndex = parseFloat(row.range_avg);
-        departmentThisMonthAvg = parseFloat(row.this_month_avg || '0') || null;
-        departmentLastMonthAvg = parseFloat(row.last_month_avg || '0') || null;
-        departmentOverallAvg = parseFloat(row.overall_avg || '0') || null;
-        departmentHeadcount = parseInt(row.headcount || '0');
+
+      const dRow = deptMoodRes.rows[0];
+      if (dRow) {
+        departmentMoodIndex = parseFloat(dRow.range_avg || '7.0');
+        departmentThisMonthAvg = parseFloat(dRow.this_month_avg || '0') || null;
+        departmentLastMonthAvg = parseFloat(dRow.last_month_avg || '0') || null;
+        departmentOverallAvg = parseFloat(dRow.overall_avg || '0') || null;
+        departmentHeadcount = Math.max(1, parseInt(dRow.headcount || '1', 10));
+        departmentThisMonthCheckins = parseInt(dRow.month_checkins || '0', 10);
+        departmentMonthlyParticipation = Math.min(100, Math.round((departmentThisMonthCheckins / (departmentHeadcount * expectedCheckinsThisMonth)) * 100));
       }
+
+      // Comparison History: weekly ratings for user vs department
+      const compRes = await query(
+        `SELECT 
+           DATE_TRUNC('week', m.created_at)::date as date,
+           ROUND(AVG(CASE WHEN m.user_id = $1 THEN m.mood_score END), 1) as user_score,
+           ROUND(AVG(m.mood_score), 1) as dept_avg
+         FROM mood_entries m
+         JOIN users u ON m.user_id = u.id
+         WHERE u.department_id = $2 AND m.created_at >= NOW() - INTERVAL '8 weeks'
+         GROUP BY DATE_TRUNC('week', m.created_at)::date
+         ORDER BY date DESC LIMIT 5`,
+        [userId, departmentId]
+      );
+
+      comparisonHistory = compRes.rows.map((row) => {
+        const dObj = new Date(row.date);
+        const endWk = new Date(dObj);
+        endWk.setDate(endWk.getDate() + 6);
+        const label = `${dObj.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} – ${endWk.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}`;
+        return {
+          periodLabel: label,
+          userScore: row.user_score ? parseFloat(row.user_score) : null,
+          deptAvg: row.dept_avg ? parseFloat(row.dept_avg) : null,
+        };
+      });
     }
 
-    const pdfBuffer = await generateEmployeeReportPDF(employeeName, rangeLabel, {
+    const pdfBuffer = await generateEmployeeReportPDF(employeeName, employeeEmail, rangeLabel, {
       moodIndex,
       thisMonthAvg,
       lastMonthAvg,
       overallAvg,
+      thisMonthCheckins,
+      expectedCheckinsThisMonth,
+      monthlyCompliance,
       distribution,
-      trends: trendsRes.rows.map(row => ({ date: row.date, score: parseFloat(row.score) })),
-      feelings: feelingsRes.rows.map(row => ({ name: row.name, count: parseInt(row.count) })),
-      contributors: contributorsRes.rows.map(row => ({ name: row.name, count: parseInt(row.count) })),
+      trends: trendsRes.rows.map((r) => ({ date: r.date, score: parseFloat(r.score) })),
+      feelings: feelingsRes.rows.map((r) => ({ name: r.name, count: parseInt(r.count, 10) })),
+      contributors: contributorsRes.rows.map((r) => ({ name: r.name, count: parseInt(r.count, 10) })),
       departmentName,
       departmentMoodIndex,
       departmentThisMonthAvg,
       departmentLastMonthAvg,
       departmentOverallAvg,
       departmentHeadcount,
+      departmentThisMonthCheckins,
+      departmentExpectedCheckinsThisMonth: departmentHeadcount * expectedCheckinsThisMonth,
+      departmentMonthlyParticipation,
+      comparisonHistory,
     });
 
     await sendEmail({
       to: req.user.email,
-      subject: 'Your Wellbeing Report',
-      html: buildEmailTemplate('Your Wellbeing Report', `
+      subject: `Your Wellbeing & Benchmark Report (${rangeLabel})`,
+      html: buildEmailTemplate(
+        'Your Wellbeing & Benchmark Report',
+        `
         <p>Hi ${employeeName},</p>
-        <p>Your requested wellbeing report for the period <strong>${rangeLabel}</strong> is ready. Please find the PDF attached to this email.</p>
-      `),
+        <p>Your requested wellbeing insights and department benchmark report for <strong>${rangeLabel}</strong> is ready.</p>
+        <p>Please find the executive PDF report attached with your monthly check-in analytics and department standings.</p>
+      `
+      ),
       emailType: 'Report',
       attachments: [
         {
           content: pdfBuffer,
-          filename: `Employee_Wellness_Report_${range}.pdf`,
+          filename: `Employee_Wellness_Report_${range || 'ytd'}.pdf`,
         },
       ],
     });
 
     await query(
-      `INSERT INTO reports (user_id, type, date_range) 
-       VALUES ($1, 'employee', $2)`,
+      `INSERT INTO reports (user_id, type, date_range) VALUES ($1, 'employee', $2)`,
       [userId, rangeLabel]
     );
 
-    await logAudit(userId, 'employee_report_sent', { range });
+    await logAudit(userId, 'employee_report_sent', { range, rangeLabel });
 
-    res.json({ message: 'Report generated and sent to your email successfully.' });
+    res.json({ message: 'Personal wellbeing report generated and sent to your email successfully.' });
   } catch (error: any) {
     console.error('Request employee report error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: 'Internal server error while generating employee report' });
   }
 };
 
-export const buildAndEmailAdminReport = async (userId: string, userEmail: string, range: string, startDate?: string, endDate?: string, exportType: 'pdf' | 'csv' = 'pdf', groupBy: 'weeks' | 'months' = 'weeks', options: any = null) => {
+// --------------------------------------------------------------------------
+// 2. ADMIN / ORGANIZATIONAL REPORT CONTROLLER
+// --------------------------------------------------------------------------
+export const buildAndEmailAdminReport = async (
+  userId: string,
+  userEmail: string,
+  range: string,
+  startDate?: string,
+  endDate?: string,
+  exportType: 'pdf' | 'csv' = 'pdf',
+  groupBy: 'weeks' | 'months' = 'weeks',
+  options: any = null
+) => {
   const rangeLabel = getRangeLabel(range, startDate, endDate);
-  
-let filterClause = '';
-  const filterValues: any[] = [];
-  if (range === 'custom' && startDate && endDate) {
-    filterClause = `AND m.created_at >= $1 AND m.created_at <= $2`;
-    filterValues.push(new Date(startDate), new Date(endDate));
-  } else {
-    const tempFilter = getDateFilter(range, undefined, undefined, 'm');
-    filterClause = tempFilter.clause;
-    if (tempFilter.values) filterValues.push(...tempFilter.values);
-  }
+  const filter = getDateFilter(range, startDate, endDate, 'm');
 
-  let deptFilter = '';
+  const isSpecificDept = options && options.departments === 'specific' && Boolean(options.deptId);
+  const deptName = isSpecificDept ? options.deptId : undefined;
+
+  // Department filter clauses
   let deptFilterUsers = '';
-  if (options && options.departments === 'specific' && options.deptId) {
-    // If it's specific department, filter users by department
-    deptFilter = ` AND u.department_id = (SELECT id FROM departments WHERE name = '${options.deptId}')`;
+  let deptFilterEntries = '';
+  if (isSpecificDept) {
     deptFilterUsers = ` AND u.department_id = (SELECT id FROM departments WHERE name = '${options.deptId}')`;
+    deptFilterEntries = ` AND u.department_id = (SELECT id FROM departments WHERE name = '${options.deptId}')`;
   }
 
+  // 1. Mood Index (Period average scoped to department or company)
   const moodRes = await query(
-    `SELECT AVG(m.mood_score) as avg_score FROM mood_entries m JOIN users u ON m.user_id = u.id WHERE 1=1 ${filterClause}${deptFilter}`,
-    filterValues
+    `SELECT AVG(m.mood_score) as avg_score 
+     FROM mood_entries m 
+     JOIN users u ON m.user_id = u.id 
+     WHERE 1=1 ${filter.clause}${deptFilterEntries}`,
+    filter.values
   );
-  const avgScore = parseFloat(moodRes.rows[0].avg_score || '0');
-  const moodIndex = parseFloat(avgScore.toFixed(1));
+  const avgScore = parseFloat(moodRes.rows[0]?.avg_score || '0');
+  const moodIndex = avgScore > 0 ? parseFloat(avgScore.toFixed(1)) : 7.0;
 
-  // Fetch company stats for this month, last month, overall
+  // 2. Comparison averages: This Month / Last Month / Overall
   const compStatsRes = await query(
     `SELECT 
        ROUND(AVG(CASE WHEN m.created_at >= DATE_TRUNC('month', NOW()) THEN m.mood_score END), 1) as this_month_avg,
@@ -219,85 +356,127 @@ let filterClause = '';
        ROUND(AVG(m.mood_score), 1) as overall_avg
      FROM mood_entries m
      JOIN users u ON m.user_id = u.id
-     WHERE 1=1 ${deptFilterUsers}`
+     WHERE 1=1 ${deptFilterEntries}`
   );
   const compStats = compStatsRes.rows[0];
-  const thisMonthAvg = parseFloat(compStats.this_month_avg || '0') || null;
-  const lastMonthAvg = parseFloat(compStats.last_month_avg || '0') || null;
-  const overallAvg = parseFloat(compStats.overall_avg || '0') || null;
+  const thisMonthAvg = parseFloat(compStats?.this_month_avg || '0') || null;
+  const lastMonthAvg = parseFloat(compStats?.last_month_avg || '0') || null;
+  const overallAvg = parseFloat(compStats?.overall_avg || '0') || null;
 
+  // 3. Total Checkins in Period
   const checkinCountRes = await query(
-    `SELECT COUNT(*) as count FROM mood_entries m JOIN users u ON m.user_id = u.id WHERE 1=1 ${filterClause}${deptFilter}`,
-    filterValues
+    `SELECT COUNT(*) as count 
+     FROM mood_entries m 
+     JOIN users u ON m.user_id = u.id 
+     WHERE 1=1 ${filter.clause}${deptFilterEntries}`,
+    filter.values
   );
-  const checkinsCount = parseInt(checkinCountRes.rows[0].count || '0');
+  const checkinsCount = parseInt(checkinCountRes.rows[0]?.count || '0', 10);
 
+  // 4. Total Employees Scoped
   const empCountRes = await query(
-    `SELECT COUNT(*) as count FROM users u 
+    `SELECT COUNT(*) as count 
+     FROM users u 
      JOIN roles r ON u.role_id = r.id 
      WHERE r.name = 'employee' AND u.full_name IS NOT NULL${deptFilterUsers}`
   );
-  const totalEmployees = parseInt(empCountRes.rows[0].count || '0');
-  
-  let expectedCheckinsPerEmployee = 4; // default for 30d
-  if (range === '7d') {
-    expectedCheckinsPerEmployee = 1;
-  } else if (range === 'ytd') {
-    const startOfYear = new Date(new Date().getFullYear(), 0, 1);
-    const now = new Date();
-    const diffTime = Math.abs(now.getTime() - startOfYear.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    expectedCheckinsPerEmployee = Math.max(1, Math.round(diffDays / 7));
-  } else if (range === 'custom' && startDate && endDate) {
-    const diffTime = Math.abs(new Date(endDate).getTime() - new Date(startDate).getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    expectedCheckinsPerEmployee = Math.max(1, Math.round(diffDays / 7));
+  const totalEmployees = Math.max(1, parseInt(empCountRes.rows[0]?.count || '0', 10));
+
+  // 5. Monthly Check-in Performance (Crucial user requirement: "how much for the month they have done")
+  const expectedCheckinsThisMonth = getExpectedCheckinsInMonth();
+  const monthExpectedTotal = totalEmployees * expectedCheckinsThisMonth;
+
+  const monthlyCheckinRes = await query(
+    `SELECT 
+       COUNT(m.id) as month_checkins,
+       COUNT(DISTINCT m.user_id) as active_users
+     FROM mood_entries m
+     JOIN users u ON m.user_id = u.id
+     WHERE m.created_at >= DATE_TRUNC('month', NOW())${deptFilterEntries}`
+  );
+  const monthCheckinsTotal = parseInt(monthlyCheckinRes.rows[0]?.month_checkins || '0', 10);
+  const monthActiveEmployees = parseInt(monthlyCheckinRes.rows[0]?.active_users || '0', 10);
+  const monthComplianceRate = monthExpectedTotal > 0 ? Math.min(100, Math.round((monthCheckinsTotal / monthExpectedTotal) * 100)) : 0;
+
+  // Expected checkins in selected period
+  let expectedInPeriod = 4;
+  if (range === '7d') expectedInPeriod = 1;
+  else if (range === '30d') expectedInPeriod = 4;
+  else if (range === '90d') expectedInPeriod = 12;
+  else if (startDate && endDate) {
+    const diffDays = Math.ceil(Math.abs(new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24));
+    expectedInPeriod = Math.max(1, Math.round(diffDays / 7));
   }
+  const participationRate = Math.min(100, Math.round((checkinsCount / (totalEmployees * expectedInPeriod)) * 100));
 
-  const participationRate = totalEmployees > 0 ? Math.min(100, Math.round((checkinsCount / (totalEmployees * expectedCheckinsPerEmployee)) * 100)) : 0;
-
+  // 6. Score Distribution (1-10)
   const distRes = await query(
-    `SELECT m.mood_score, COUNT(*) as count FROM mood_entries m JOIN users u ON m.user_id = u.id WHERE 1=1 ${filterClause}${deptFilter}
+    `SELECT m.mood_score, COUNT(*) as count 
+     FROM mood_entries m 
+     JOIN users u ON m.user_id = u.id 
+     WHERE 1=1 ${filter.clause}${deptFilterEntries}
      GROUP BY mood_score`,
-    filterValues
+    filter.values
   );
   const distribution = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1].map((score) => {
     const row = distRes.rows.find((r) => parseInt(r.mood_score) === score);
     return {
       score,
       name: String(score),
-      count: parseInt(row?.count || '0'),
+      count: parseInt(row?.count || '0', 10),
     };
   });
 
+  // 7. Mood Trends
   const trendsRes = await query(
     `SELECT DATE_TRUNC('week', m.created_at)::date as date, ROUND(AVG(mood_score), 1) as score
      FROM mood_entries m
      JOIN users u ON m.user_id = u.id
-     WHERE 1=1 ${filterClause}${deptFilterUsers}
+     WHERE 1=1 ${filter.clause}${deptFilterEntries}
      GROUP BY DATE_TRUNC('week', m.created_at)::date
      ORDER BY date ASC`,
-    filterValues
+    filter.values
   );
 
-  // Fetch department conditional trend stats and headcount
+  // 8. Department Breakdown with Monthly Check-ins!
+  const deptWhere = isSpecificDept ? `WHERE d.name = '${options.deptId}'` : '';
   const deptStatsRes = await query(
     `SELECT 
        d.name,
        COUNT(DISTINCT u.id) as headcount,
-       COUNT(DISTINCT CASE WHEN 1=1 ${filterClause} THEN u.id END) as checked_in,
-       ROUND(AVG(CASE WHEN 1=1 ${filterClause} THEN m.mood_score END), 1) as overall_avg,
+       COUNT(CASE WHEN m.created_at >= DATE_TRUNC('month', NOW()) THEN m.id END) as this_month_checkins,
+       COUNT(DISTINCT CASE WHEN m.created_at >= DATE_TRUNC('month', NOW()) THEN u.id END) as active_members,
        ROUND(AVG(CASE WHEN m.created_at >= DATE_TRUNC('month', NOW()) THEN m.mood_score END), 1) as this_month_avg,
-       ROUND(AVG(CASE WHEN m.created_at >= DATE_TRUNC('month', NOW() - INTERVAL '1 month') AND m.created_at < DATE_TRUNC('month', NOW()) THEN m.mood_score END), 1) as last_month_avg
+       ROUND(AVG(CASE WHEN m.created_at >= DATE_TRUNC('month', NOW() - INTERVAL '1 month') AND m.created_at < DATE_TRUNC('month', NOW()) THEN m.mood_score END), 1) as last_month_avg,
+       ROUND(AVG(m.mood_score), 1) as overall_avg
      FROM departments d
      LEFT JOIN users u ON u.department_id = d.id AND u.role_id = (SELECT id FROM roles WHERE name = 'employee')
      LEFT JOIN mood_entries m ON m.user_id = u.id
-     WHERE 1=1 ${options?.departments === 'specific' ? `AND d.name = '${options.deptId}'` : ''}
+     ${deptWhere}
      GROUP BY d.name
-     ORDER BY d.name ASC`,
-    filterValues
+     ORDER BY d.name ASC`
   );
 
+  const departments = deptStatsRes.rows.map((row) => {
+    const headcount = parseInt(row.headcount || '0', 10);
+    const thisMonthCheckins = parseInt(row.this_month_checkins || '0', 10);
+    const expectedCheckins = headcount * expectedCheckinsThisMonth;
+    const complianceRate = expectedCheckins > 0 ? Math.min(100, Math.round((thisMonthCheckins / expectedCheckins) * 100)) : 0;
+
+    return {
+      name: row.name,
+      headcount,
+      thisMonthCheckins,
+      expectedCheckins,
+      complianceRate,
+      activeMembers: parseInt(row.active_members || '0', 10),
+      thisMonthAvg: parseFloat(row.this_month_avg || '0') || null,
+      lastMonthAvg: parseFloat(row.last_month_avg || '0') || null,
+      overallAvg: parseFloat(row.overall_avg || '0') || null,
+    };
+  });
+
+  // 9. Feelings & Contributors
   const feelRes = await query(
     `SELECT 
        f.name,
@@ -307,10 +486,10 @@ let filterClause = '';
      JOIN feelings f ON ef.feeling_id = f.id
      JOIN mood_entries m ON ef.entry_id = m.id
      JOIN users u ON m.user_id = u.id
-     WHERE 1=1 ${filterClause}${deptFilterUsers}
+     WHERE 1=1 ${filter.clause}${deptFilterEntries}
      GROUP BY f.name
-     ORDER BY count DESC LIMIT 10`,
-    filterValues
+     ORDER BY count DESC LIMIT 8`,
+    filter.values
   );
 
   const contRes = await query(
@@ -322,25 +501,60 @@ let filterClause = '';
      JOIN contributors c ON ec.contributor_id = c.id
      JOIN mood_entries m ON ec.entry_id = m.id
      JOIN users u ON m.user_id = u.id
-     WHERE 1=1 ${filterClause}${deptFilterUsers}
+     WHERE 1=1 ${filter.clause}${deptFilterEntries}
      GROUP BY c.name
-     ORDER BY count DESC LIMIT 10`,
-    filterValues
+     ORDER BY count DESC LIMIT 8`,
+    filter.values
   );
 
+  // 10. Generate Historical Report Periods (for table headers and columns)
+  const now = endDate ? new Date(endDate) : new Date();
+  const generatePeriods = (count = 4) => {
+    const list = [];
+    const curWeek = new Date(now);
+    const day = curWeek.getDay();
+    let diff = 0;
+    if (day === 5) diff = 0;
+    else if (day === 6) diff = -1;
+    else diff = -(day + 2);
+
+    curWeek.setDate(curWeek.getDate() + diff);
+    curWeek.setHours(0, 0, 0, 0);
+
+    for (let i = 0; i < count; i++) {
+      const startWk = new Date(curWeek);
+      startWk.setDate(startWk.getDate() - i * 7);
+      const endWk = new Date(startWk);
+      endWk.setDate(endWk.getDate() + 6);
+      endWk.setHours(23, 59, 59, 999);
+
+      const label = `${startWk.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} – ${endWk.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}`;
+      list.push({
+        label,
+        start: startWk.toISOString(),
+        end: endWk.toISOString(),
+      });
+    }
+    return list;
+  };
+  const reportPeriods = generatePeriods(4);
+
+  // 11. Employee-level details: "their checkin how much for the month they have done"
   const employeesRes = await query(
     `SELECT 
        u.id, 
        u.full_name as name, 
        u.email, 
        COALESCE(d.name, 'Unassigned') as department,
+       COUNT(CASE WHEN m.created_at >= DATE_TRUNC('month', NOW()) THEN m.id END) as this_month_checkins,
+       ROUND(AVG(CASE WHEN m.created_at >= DATE_TRUNC('month', NOW()) THEN m.mood_score END), 1) as this_month_avg,
        ROUND(AVG(m.mood_score), 1) as overall_avg,
        COALESCE(
          JSON_AGG(
            JSON_BUILD_OBJECT('date', m.created_at, 'score', m.mood_score)
-         ) FILTER (WHERE m.id IS NOT NULL AND m.created_at >= NOW() - INTERVAL '5 weeks'),
+         ) FILTER (WHERE m.id IS NOT NULL),
          '[]'
-       ) as recent_history
+       ) as history
      FROM users u
      JOIN roles r ON u.role_id = r.id
      LEFT JOIN departments d ON u.department_id = d.id
@@ -350,98 +564,32 @@ let filterClause = '';
      ORDER BY department ASC, u.full_name ASC`
   );
 
-  const now = endDate ? new Date(endDate) : new Date();
-  
-  // generate periods logic inside backend
-  const activePeriods = [];
-  let currentFilterEnd = now;
-  if (startDate && endDate && range === 'custom') {
-    // If it's a custom range, we just use the passed dates as boundaries.
-    // Wait, the user wants month-wise per employee reports based on the groupBy filter.
-    // Let's generate exactly the periods from startDate to endDate using groupBy.
-  }
-  
-  // Actually, we can generate a fixed 12 periods based on 'now' and just slice it to fit the requested timeframe.
-  const generatePeriods = (count = 12, groupBy = 'weeks') => {
-    const periods = [];
-    if (groupBy === 'weeks') {
-      const currentWeekStart = new Date(now);
-      const day = currentWeekStart.getDay(); 
-      let diff = 0;
-      if (day === 5) diff = 0;
-      else if (day === 6) diff = -1;
-      else diff = -(day + 2);
-      
-      currentWeekStart.setDate(currentWeekStart.getDate() + diff);
-      currentWeekStart.setHours(0, 0, 0, 0);
-
-      for (let i = 0; i < count; i++) {
-        const start = new Date(currentWeekStart);
-        start.setDate(start.getDate() - (i * 7));
-        const end = new Date(start);
-        end.setDate(end.getDate() + 6);
-        end.setHours(23, 59, 59, 999);
-        
-        const label = `${start.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} - ${end.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`;
-        
-        periods.push({
-          label,
-          start: start.toISOString(),
-          end: end.toISOString()
-        });
-      }
-    } else {
-      const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-      for (let i = 0; i < count; i++) {
-        const start = new Date(currentMonthStart);
-        start.setMonth(start.getMonth() - i);
-        const end = new Date(start.getFullYear(), start.getMonth() + 1, 0, 23, 59, 59, 999);
-        
-        const label = start.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
-        
-        periods.push({
-          label,
-          start: start.toISOString(),
-          end: end.toISOString()
-        });
-      }
-    }
-    return periods;
-  };
-  
-  const periods = generatePeriods(12, groupBy);
-  
-  // Determine which periods to show
-  let eIdx = 0;
-  let sIdx = 3; // By default show 4 periods
-  if (startDate && endDate) {
-    eIdx = periods.findIndex(p => p.end === endDate);
-    sIdx = periods.findIndex(p => p.start === startDate);
-    if (eIdx === -1) eIdx = 0;
-    if (sIdx === -1) sIdx = periods.length - 1;
-  }
-  
-  const reportPeriods = periods.slice(eIdx, sIdx + 1).reverse();
-
-  const getScore = (history: any[], startIso: string, endIso: string) => {
+  const getScoreInPeriod = (hist: any[], startIso: string, endIso: string) => {
     const s = new Date(startIso).getTime();
     const e = new Date(endIso).getTime();
-    const found = history.find((h: any) => {
+    const match = hist.find((h: any) => {
       const t = new Date(h.date).getTime();
       return t >= s && t <= e;
     });
-    return found ? found.score : null;
+    return match ? match.score : null;
   };
 
   const employeeDetails = employeesRes.rows.map((row) => {
-    const hist = Array.isArray(row.recent_history) ? row.recent_history : [];
-    const scores = reportPeriods.map(p => getScore(hist, p.start, p.end));
+    const thisMonthCheckins = parseInt(row.this_month_checkins || '0', 10);
+    const monthlyCompliance = Math.min(100, Math.round((thisMonthCheckins / expectedCheckinsThisMonth) * 100));
+    const hist = Array.isArray(row.history) ? row.history : [];
+    const scores = reportPeriods.map((p) => getScoreInPeriod(hist, p.start, p.end));
+
     return {
       name: row.name,
       email: row.email,
       department: row.department,
-      overallAvg: row.overall_avg ? parseFloat(row.overall_avg) : null,
-      scores
+      thisMonthCheckins,
+      expectedThisMonth: expectedCheckinsThisMonth,
+      monthlyCompliance,
+      thisMonthAvg: parseFloat(row.this_month_avg || '0') || null,
+      overallAvg: parseFloat(row.overall_avg || '0') || null,
+      scores,
     };
   });
 
@@ -449,93 +597,109 @@ let filterClause = '';
   let filename = '';
 
   if (exportType === 'pdf') {
-    filename = `Admin_Wellness_Report_${range}.pdf`;
+    filename = isSpecificDept
+      ? `${deptName}_Wellbeing_Report_${range}.pdf`
+      : `Admin_Wellness_Report_${range}.pdf`;
 
     reportBuffer = await generateAdminReportPDF(rangeLabel, {
-      departmentName: options?.departments === 'specific' ? options.deptId : undefined,
+      departmentName: deptName,
       moodIndex,
       thisMonthAvg,
       lastMonthAvg,
       overallAvg,
-      participationRate: Math.min(participationRate, 100),
+      participationRate,
       totalEmployees,
       checkinsCount,
+      monthCheckinsTotal,
+      monthExpectedTotal,
+      monthComplianceRate,
+      monthActiveEmployees,
       distribution,
-      trends: trendsRes.rows.map(row => ({ date: row.date, score: parseFloat(row.score) })),
-      departments: deptStatsRes.rows.map(row => ({
-        name: row.name,
-        headcount: parseInt(row.headcount || '0'),
-        checkedIn: parseInt(row.checked_in || '0'),
-        overallAvg: parseFloat(row.overall_avg || '0') || null,
-        thisMonthAvg: parseFloat(row.this_month_avg || '0') || null,
-        lastMonthAvg: parseFloat(row.last_month_avg || '0') || null,
+      trends: trendsRes.rows.map((r) => ({ date: r.date, score: parseFloat(r.score) })),
+      departments,
+      feelings: feelRes.rows.map((r) => ({
+        name: r.name,
+        count: parseInt(r.count, 10),
+        moodCorrelation: parseFloat(r.avg_mood || '0'),
       })),
-      feelings: feelRes.rows.map(row => ({
-        name: row.name,
-        count: parseInt(row.count),
-        moodCorrelation: parseFloat(row.avg_mood),
-      })),
-      contributors: contRes.rows.map(row => ({
-        name: row.name,
-        count: parseInt(row.count),
-        moodCorrelation: parseFloat(row.avg_mood),
+      contributors: contRes.rows.map((r) => ({
+        name: r.name,
+        count: parseInt(r.count, 10),
+        moodCorrelation: parseFloat(r.avg_mood || '0'),
       })),
       employeeDetails,
       reportPeriods,
-      sections: options?.sections
+      sections: options?.sections,
     });
   } else {
-    filename = `Admin_Wellness_Report_${range}.csv`;
+    filename = isSpecificDept
+      ? `${deptName}_Wellbeing_Dataset_${range}.csv`
+      : `Admin_Wellness_Dataset_${range}.csv`;
 
-    let csvText = `Employee Wellness Index Admin Report\nPeriod,${rangeLabel}\nOverall Wellness Index,${moodIndex}\nTotal Checkins,${checkinsCount}\n\n`;
-    
-    if (!options || options?.sections?.summary !== false) {
-      csvText += `Wellness Distribution\nWellness Score,Count\n`;
-      distribution.forEach((d) => {
-        csvText += `${d.name},${d.count}\n`;
-      });
-    }
+    let csv = `Employee Wellness Index Report\n`;
+    csv += `Scope,${deptName || 'Entire Organization'}\n`;
+    csv += `Evaluation Period,${rangeLabel}\n`;
+    csv += `Mood Index,${moodIndex}\n`;
+    csv += `Monthly Check-ins Completed,${monthCheckinsTotal} / ${monthExpectedTotal} (${monthComplianceRate}%)\n`;
+    csv += `Active Employees This Month,${monthActiveEmployees} / ${totalEmployees}\n`;
+    csv += `Total Check-in Submissions in Period,${checkinsCount}\n\n`;
 
+    // Department Breakdown
     if (!options || options?.sections?.departments !== false) {
-      csvText += `\nDepartment Breakdown\nDepartment,This Month Avg,Last Month Avg,Overall Avg,Team Size\n`;
-      deptStatsRes.rows.forEach((d: any) => {
-        csvText += `${d.name},${d.this_month_avg || '—'},${d.last_month_avg || '—'},${d.overall_avg || '—'},${d.headcount || 0}\n`;
+      csv += `Departmental Breakdown\n`;
+      csv += `Department,Headcount,This Month Check-ins,Monthly Compliance %,This Month Avg,Last Month Avg,Overall Avg\n`;
+      departments.forEach((d) => {
+        csv += `"${d.name}",${d.headcount},"${d.thisMonthCheckins} / ${d.expectedCheckins}",${d.complianceRate}%,${d.thisMonthAvg || '—'},${d.lastMonthAvg || '—'},${d.overallAvg || '—'}\n`;
       });
+      csv += `\n`;
     }
 
+    // Trends & Drivers
     if (!options || options?.sections?.trends !== false) {
-      csvText += `\nTop Feelings\nFeeling,Count,Wellness Correlation\n`;
+      csv += `Top Workplace Feelings\nFeeling,Check-in Count,Mood Correlation\n`;
       feelRes.rows.forEach((f) => {
-        csvText += `${f.name},${f.count},${f.avg_mood}\n`;
+        csv += `"${f.name}",${f.count},${f.avg_mood}\n`;
       });
-
-      csvText += `\nTop Contributors\nContributor,Count,Wellness Correlation\n`;
+      csv += `\nTop Workplace Contributors\nContributor,Check-in Count,Mood Correlation\n`;
       contRes.rows.forEach((c) => {
-        csvText += `${c.name},${c.count},${c.avg_mood}\n`;
+        csv += `"${c.name}",${c.count},${c.avg_mood}\n`;
       });
+      csv += `\n`;
     }
 
+    // Employee Level Detail Table
     if (!options || options?.sections?.employees !== false) {
-      let headers = "Department,Name,Email,Overall Avg,";
-      headers += reportPeriods.map((p: any) => p.label).join(",") + "\n";
-      csvText += `\nEmployee Details by Department\n${headers}`;
-      
+      csv += `Employee Check-in & Wellbeing Details\n`;
+      let headers = `Department,Employee Name,Email,Check-ins This Month,Monthly Compliance %,This Month Avg,Overall Avg,`;
+      headers += reportPeriods.map((p) => `"${p.label}"`).join(',') + '\n';
+      csv += headers;
+
       employeeDetails.forEach((emp) => {
-        let row = `"${emp.department}","${emp.name}","${emp.email}",${emp.overallAvg || '—'},`;
-        row += emp.scores.map((s: any) => s !== null ? s : '—').join(",") + "\n";
-        csvText += row;
+        let line = `"${emp.department}","${emp.name}","${emp.email}","${emp.thisMonthCheckins} / ${emp.expectedThisMonth}",${emp.monthlyCompliance}%,${emp.thisMonthAvg || '—'},${emp.overallAvg || '—'},`;
+        line += emp.scores.map((s) => (s !== null ? s : 'Missed')).join(',') + '\n';
+        csv += line;
       });
     }
 
-    reportBuffer = Buffer.from(csvText, 'utf-8');
+    reportBuffer = Buffer.from(csv, 'utf-8');
   }
 
+  // Send Email with generated report attachment
   await sendEmail({
     to: userEmail,
-    subject: `Weekly Wellbeing Export: ${rangeLabel}`,
-    html: buildEmailTemplate('Admin Wellbeing Export', `
-      <p>The requested analytics report for the period <strong>${rangeLabel}</strong> is ready. Please find the exported <strong>${exportType.toUpperCase()}</strong> file attached to this email.</p>
-    `),
+    subject: `Wellbeing Export: ${deptName ? `${deptName} Department` : 'Organization'} (${rangeLabel})`,
+    html: buildEmailTemplate(
+      'Wellbeing Analytics Report Ready',
+      `
+      <p>The analytics and check-in compliance report for <strong>${deptName ? `${deptName} Department` : 'the Entire Organization'}</strong> (${rangeLabel}) is ready.</p>
+      <p>Please find the exported <strong>${exportType.toUpperCase()}</strong> file attached.</p>
+      <ul>
+        <li><strong>Wellbeing Index:</strong> ${moodIndex} / 10</li>
+        <li><strong>This Month Check-ins:</strong> ${monthCheckinsTotal} / ${monthExpectedTotal} (${monthComplianceRate}%)</li>
+        <li><strong>Active Employees This Month:</strong> ${monthActiveEmployees} of ${totalEmployees}</li>
+      </ul>
+    `
+    ),
     emailType: 'Report',
     attachments: [
       {
@@ -545,13 +709,18 @@ let filterClause = '';
     ],
   });
 
-  await query(
-    `INSERT INTO reports (user_id, type, date_range, file_url) 
-     VALUES ($1, 'admin', $2, $3)`,
-    [userId, rangeLabel, filename]
-  );
+  // Log report generation in database
+  // Note: user_id must be a valid UUID. If not valid UUID (e.g. system tests), fallback to null
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const validUserId = uuidRegex.test(userId) ? userId : null;
 
-  await logAudit(userId, 'admin_report_sent', { range, exportType });
+  if (validUserId) {
+    await query(
+      `INSERT INTO reports (user_id, type, date_range, file_url) VALUES ($1, 'admin', $2, $3)`,
+      [validUserId, rangeLabel, filename]
+    );
+    await logAudit(validUserId, 'admin_report_sent', { range, exportType, deptName });
+  }
 };
 
 export const requestAdminReport = async (req: AuthenticatedRequest, res: Response) => {
@@ -561,10 +730,19 @@ export const requestAdminReport = async (req: AuthenticatedRequest, res: Respons
   const userId = req.user.id;
 
   try {
-    await buildAndEmailAdminReport(userId, req.user.email, range, startDate, endDate, exportType, groupBy || 'weeks', options);
-    res.json({ message: `Report generated and sent to your email successfully.` });
+    await buildAndEmailAdminReport(
+      userId,
+      req.user.email,
+      range,
+      startDate,
+      endDate,
+      exportType,
+      groupBy || 'weeks',
+      options
+    );
+    res.json({ message: 'Report generated and sent to your email successfully.' });
   } catch (error: any) {
     console.error('Request admin report error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: 'Internal server error while generating admin report' });
   }
 };

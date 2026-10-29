@@ -879,7 +879,7 @@ export const EmployeeHome: React.FC = () => {
           <div className="w-full max-w-sm rounded-2xl glass p-6 shadow-2xl animate-fade-in">
             <h3 className="text-lg font-bold text-white mb-2">Send Personal Report</h3>
             <p className="text-slate-400 text-xs mb-6">
-              Generate a custom PDF containing your wellbeing trends and email it to <strong className="text-slate-200">{user.email}</strong>.
+              Generate an executive PDF with your personal wellbeing analytics, monthly check-in consistency, and benchmarks against your department, delivered to <strong className="text-slate-200">{user.email}</strong>.
             </p>
 
             {reportSuccess ? (
@@ -900,7 +900,7 @@ export const EmployeeHome: React.FC = () => {
             ) : (
               <div className="space-y-6">
                 <p className="text-xs text-slate-400">
-                  This report covers the timeframe <strong>From January</strong> (Year to Date).
+                  Includes your <strong>Year to Date</strong> trends, monthly check-in score history, and department comparisons.
                 </p>
 
                 {reportError && (
