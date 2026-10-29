@@ -111,13 +111,16 @@ function applyPageFooters(doc: PDFKit.PDFDocument) {
   const range = doc.bufferedPageRange();
   for (let i = 0; i < range.count; i++) {
     doc.switchToPage(i);
-    doc.strokeColor(CARD_BORDER).lineWidth(0.5).moveTo(45, 785).lineTo(550, 785).stroke();
+    const savedBottom = doc.page.margins.bottom;
+    doc.page.margins.bottom = 0; // Temporarily disable bottom margin check
+    doc.strokeColor(CARD_BORDER).lineWidth(0.5).moveTo(45, 790).lineTo(550, 790).stroke();
     doc.fillColor(MUTED_COLOR).fontSize(7.5).font('Helvetica').text(
       `Employee Wellness Index • Confidential Report • Page ${i + 1} of ${range.count}`,
       45,
-      795,
-      { align: 'center', width: 505 }
+      798,
+      { align: 'center', width: 505, lineBreak: false }
     );
+    doc.page.margins.bottom = savedBottom;
   }
 }
 
@@ -157,7 +160,11 @@ export const generateEmployeeReportPDF = (
   }
 ): Promise<Buffer> => {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ margin: 45, size: 'A4', bufferPages: true });
+    const doc = new PDFDocument({
+      margins: { top: 45, bottom: 30, left: 45, right: 45 },
+      size: 'A4',
+      bufferPages: true,
+    });
     const chunks: Buffer[] = [];
     const bufferStream = new Writable({
       write(chunk, encoding, callback) {
@@ -174,22 +181,31 @@ export const generateEmployeeReportPDF = (
     // PAGE 1: EXECUTIVE WELLBEING & DEPARTMENT BENCHMARK
     // =========================================================================
     
-    // Header Banner
-    doc.fillColor(BRAND_BLUE).rect(45, 45, 6, 48).fill();
-    doc.fillColor(PRIMARY_COLOR).font('Helvetica-Bold').fontSize(20).text('WELLBEING INSIGHTS & BENCHMARK', 60, 45);
-    doc.fillColor(SECONDARY_COLOR).font('Helvetica').fontSize(9.5).text(
+    // Header Banner with Dynamic Coordinates (ZERO OVERLAP GUARANTEE)
+    const startHeaderY = 45;
+    doc.fillColor(PRIMARY_COLOR).font('Helvetica-Bold').fontSize(16).text('WELLBEING INSIGHTS & BENCHMARK', 58, startHeaderY, { width: 490 });
+    const subY = doc.y + 3;
+    doc.fillColor(SECONDARY_COLOR).font('Helvetica').fontSize(8.5).text(
       `Prepared for: ${employeeName} (${employeeEmail || 'Employee'}) • Department: ${data.departmentName || 'General'}`,
-      60,
-      68
+      58,
+      subY,
+      { width: 490 }
     );
-    doc.fillColor(MUTED_COLOR).fontSize(8).text(`Evaluation Period: ${dateRangeText} • Generated on ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`, 60, 81);
-
-    doc.strokeColor(CARD_BORDER).lineWidth(0.8).moveTo(45, 105).lineTo(550, 105).stroke();
+    const metaY = doc.y + 2;
+    doc.fillColor(MUTED_COLOR).fontSize(7.5).text(
+      `Evaluation Period: ${dateRangeText} • Generated on ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`,
+      58,
+      metaY,
+      { width: 490 }
+    );
+    const lineY = doc.y + 8;
+    doc.fillColor(BRAND_BLUE).rect(45, startHeaderY, 5, lineY - startHeaderY).fill();
+    doc.strokeColor(CARD_BORDER).lineWidth(0.8).moveTo(45, lineY).lineTo(550, lineY).stroke();
 
     // -------------------------------------------------------------------------
     // 3 Executive Benchmark KPI Cards (X=45, 218, 391; Width=159; Height=95)
     // -------------------------------------------------------------------------
-    const cardY = 118;
+    const cardY = lineY + 12;
     const cardW = 159;
     const cardH = 95;
 
@@ -332,19 +348,21 @@ export const generateEmployeeReportPDF = (
       });
     }
 
-    // -------------------------------------------------------------------------
+    // =========================================================================
     // PAGE 2: TREND TIMELINE & PERSONALIZED ANALYSIS
-    // -------------------------------------------------------------------------
+    // =========================================================================
     doc.addPage();
 
-    doc.fillColor(BRAND_BLUE).rect(45, 45, 6, 26).fill();
-    doc.fillColor(PRIMARY_COLOR).font('Helvetica-Bold').fontSize(16).text('Wellbeing Timeline & Analytical Reflections', 60, 45);
-    doc.fillColor(SECONDARY_COLOR).font('Helvetica').fontSize(8.5).text('Longitudinal trend monitoring and tailored workplace observations', 60, 62);
-
-    doc.strokeColor(CARD_BORDER).lineWidth(0.8).moveTo(45, 82).lineTo(550, 82).stroke();
+    const p2HeaderY = 45;
+    doc.fillColor(PRIMARY_COLOR).font('Helvetica-Bold').fontSize(15).text('Wellbeing Timeline & Analytical Reflections', 58, p2HeaderY, { width: 490 });
+    const p2SubY = doc.y + 3;
+    doc.fillColor(SECONDARY_COLOR).font('Helvetica').fontSize(8.5).text('Longitudinal trend monitoring and tailored workplace observations', 58, p2SubY, { width: 490 });
+    const p2LineY = doc.y + 6;
+    doc.fillColor(BRAND_BLUE).rect(45, p2HeaderY, 5, p2LineY - p2HeaderY).fill();
+    doc.strokeColor(CARD_BORDER).lineWidth(0.8).moveTo(45, p2LineY).lineTo(550, p2LineY).stroke();
 
     // Line Chart
-    let p2Y = 95;
+    let p2Y = p2LineY + 14;
     doc.fillColor(PRIMARY_COLOR).font('Helvetica-Bold').fontSize(10).text('Weekly Wellbeing Trajectory', 45, p2Y);
     doc.fillColor(MUTED_COLOR).font('Helvetica').fontSize(7.5).text('Trend trajectory plotted across active check-in cycles (Scale: 1 Awful to 10 Great)', 45, p2Y + 12);
     p2Y += 26;
@@ -364,7 +382,6 @@ export const generateEmployeeReportPDF = (
     doc.roundedRect(45, p2Y, distW, distH, 6).fillAndStroke(CARD_BG, CARD_BORDER);
 
     const distItems = data.distribution || [];
-    const maxCount = Math.max(1, ...distItems.map(d => d.count));
     const slotW = distW / 10;
 
     distItems.forEach((d, idx) => {
@@ -462,7 +479,11 @@ export const generateAdminReportPDF = (
   }
 ): Promise<Buffer> => {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ margin: 45, size: 'A4', bufferPages: true });
+    const doc = new PDFDocument({
+      margins: { top: 45, bottom: 30, left: 45, right: 45 },
+      size: 'A4',
+      bufferPages: true,
+    });
     const chunks: Buffer[] = [];
     const bufferStream = new Writable({
       write(chunk, encoding, callback) {
@@ -488,26 +509,30 @@ export const generateAdminReportPDF = (
     // PAGE 1: EXECUTIVE KPI & DEPARTMENT BREAKDOWNS
     // =========================================================================
 
-    // Header Banner
-    doc.fillColor(BRAND_BLUE).rect(45, 45, 6, 48).fill();
-    doc.fillColor(PRIMARY_COLOR).font('Helvetica-Bold').fontSize(19).text(reportTitle, 60, 45);
-    doc.fillColor(SECONDARY_COLOR).font('Helvetica').fontSize(9).text(reportSubtitle, 60, 68);
-    doc.fillColor(MUTED_COLOR).fontSize(8).text(
+    // Header Banner with Dynamic Coordinates (ZERO OVERLAP GUARANTEE)
+    const startHeaderY = 45;
+    doc.fillColor(PRIMARY_COLOR).font('Helvetica-Bold').fontSize(15).text(reportTitle, 58, startHeaderY, { width: 490 });
+    const subY = doc.y + 3;
+    doc.fillColor(SECONDARY_COLOR).font('Helvetica').fontSize(8.5).text(reportSubtitle, 58, subY, { width: 490 });
+    const metaY = doc.y + 2;
+    doc.fillColor(MUTED_COLOR).fontSize(7.5).text(
       `Period: ${dateRangeText} • Scope: ${data.departmentName || 'All Departments'} (${data.totalEmployees} Members) • Exported: ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`,
-      60,
-      81
+      58,
+      metaY,
+      { width: 490 }
     );
+    const lineY = doc.y + 8;
+    doc.fillColor(BRAND_BLUE).rect(45, startHeaderY, 5, lineY - startHeaderY).fill();
+    doc.strokeColor(CARD_BORDER).lineWidth(0.8).moveTo(45, lineY).lineTo(550, lineY).stroke();
 
-    doc.strokeColor(CARD_BORDER).lineWidth(0.8).moveTo(45, 105).lineTo(550, 105).stroke();
-
-    let currentY = 118;
+    let currentY = lineY + 12;
 
     // -------------------------------------------------------------------------
     // 1. Executive Summary Cards (Row 1)
     // -------------------------------------------------------------------------
     if (!data.sections || data.sections.summary !== false) {
       const cardW = 159;
-      const cardH = 95;
+      const cardH = 88;
 
       // Card 1: Wellbeing Index
       doc.roundedRect(45, currentY, cardW, cardH, 8).fillAndStroke(CARD_BG, CARD_BORDER);
@@ -526,7 +551,7 @@ export const generateAdminReportPDF = (
       doc.text(`Last Month: ${data.lastMonthAvg ? data.lastMonthAvg.toFixed(1) : '—'}`, 112, currentY + 36);
       doc.text(`Overall Avg: ${data.overallAvg ? data.overallAvg.toFixed(1) : '—'}`, 112, currentY + 50);
 
-      // Card 2: Monthly Check-in Performance (The key user request!)
+      // Card 2: Monthly Check-in Performance
       doc.roundedRect(218, currentY, cardW, cardH, 8).fillAndStroke(CARD_BG, CARD_BORDER);
       doc.fillColor(SECONDARY_COLOR).font('Helvetica-Bold').fontSize(7.5).text('THIS MONTH CHECK-INS', 228, currentY + 10);
       doc.fillColor(data.monthComplianceRate >= 75 ? SUCCESS_GREEN : (data.monthComplianceRate >= 50 ? BALANCED_BLUE : WARNING_ORANGE))
@@ -542,21 +567,21 @@ export const generateAdminReportPDF = (
       doc.fillColor(PRIMARY_COLOR).font('Helvetica-Bold').fontSize(7.5).text(`${data.participationRate}% Period Participation`, 401, currentY + 54);
       doc.fillColor(MUTED_COLOR).font('Helvetica').fontSize(6.8).text(`${data.totalEmployees} Total Headcount`, 401, currentY + 68);
 
-      currentY += cardH + 20;
+      currentY += cardH + 16;
     }
 
     // -------------------------------------------------------------------------
     // 2. Department Breakdown Table (Spaced generously with NO overlaps)
     // -------------------------------------------------------------------------
     if (!data.sections || data.sections.departments !== false) {
-      doc.fillColor(PRIMARY_COLOR).font('Helvetica-Bold').fontSize(11).text('Departmental Check-in & Rating Breakdown', 45, currentY);
-      doc.fillColor(SECONDARY_COLOR).font('Helvetica').fontSize(7.5).text('Monthly check-in compliance, headcount, and longitudinal ratings across departments', 45, currentY + 13);
-      currentY += 26;
+      doc.fillColor(PRIMARY_COLOR).font('Helvetica-Bold').fontSize(10.5).text('Departmental Check-in & Rating Breakdown', 45, currentY);
+      doc.fillColor(SECONDARY_COLOR).font('Helvetica').fontSize(7.5).text('Monthly check-in compliance, headcount, and longitudinal ratings across departments', 45, currentY + 12);
+      currentY += 24;
 
       // Table Header Row
-      const tblH = 18;
+      const tblH = 17;
       doc.fillColor(CARD_BG).rect(45, currentY, 505, tblH).fill();
-      doc.fillColor(SECONDARY_COLOR).font('Helvetica-Bold').fontSize(7.5);
+      doc.fillColor(SECONDARY_COLOR).font('Helvetica-Bold').fontSize(7.2);
       doc.text('Department', 55, currentY + 5);
       doc.text('Headcount', 170, currentY + 5);
       doc.text('This Month Check-ins', 230, currentY + 5);
@@ -572,31 +597,14 @@ export const generateAdminReportPDF = (
         currentY += 20;
       } else {
         deptList.forEach((dept, index) => {
-          // If page overflow would occur, start a clean page
-          if (currentY > 740) {
-            doc.addPage();
-            currentY = 50;
-            // Draw continued header
-            doc.fillColor(CARD_BG).rect(45, currentY, 505, tblH).fill();
-            doc.fillColor(SECONDARY_COLOR).font('Helvetica-Bold').fontSize(7.5);
-            doc.text('Department (Continued)', 55, currentY + 5);
-            doc.text('Headcount', 170, currentY + 5);
-            doc.text('This Month Check-ins', 230, currentY + 5);
-            doc.text('This Month', 340, currentY + 5);
-            doc.text('Last Month', 410, currentY + 5);
-            doc.text('Overall Avg', 480, currentY + 5);
-            doc.strokeColor(CARD_BORDER).lineWidth(0.8).moveTo(45, currentY + tblH).lineTo(550, currentY + tblH).stroke();
-            currentY += tblH + 1;
-          }
-
           if (index % 2 === 0) {
-            doc.fillColor('#fafafa').rect(45, currentY, 505, 17).fill();
+            doc.fillColor('#fafafa').rect(45, currentY, 505, 16).fill();
           }
 
           // Department Name
-          doc.fillColor(PRIMARY_COLOR).font('Helvetica-Bold').fontSize(8).text(dept.name, 55, currentY + 4, { width: 110, lineBreak: false });
+          doc.fillColor(PRIMARY_COLOR).font('Helvetica-Bold').fontSize(7.8).text(dept.name, 55, currentY + 4, { width: 110, lineBreak: false });
           // Headcount
-          doc.fillColor(SECONDARY_COLOR).font('Helvetica').fontSize(7.5).text(`${dept.headcount} members`, 170, currentY + 4);
+          doc.fillColor(SECONDARY_COLOR).font('Helvetica').fontSize(7.2).text(`${dept.headcount} members`, 170, currentY + 4);
           
           // This Month Check-ins with compliance %
           const compText = `${dept.thisMonthCheckins}/${dept.expectedCheckins} (${dept.complianceRate}%)`;
@@ -606,23 +614,23 @@ export const generateAdminReportPDF = (
           // This Month Avg
           doc.fillColor(BRAND_BLUE).font('Helvetica-Bold').fontSize(7.5).text(dept.thisMonthAvg ? dept.thisMonthAvg.toFixed(1) : '—', 340, currentY + 4);
           // Last Month Avg
-          doc.fillColor(PRIMARY_COLOR).font('Helvetica').fontSize(7.5).text(dept.lastMonthAvg ? dept.lastMonthAvg.toFixed(1) : '—', 410, currentY + 4);
+          doc.fillColor(PRIMARY_COLOR).font('Helvetica').fontSize(7.2).text(dept.lastMonthAvg ? dept.lastMonthAvg.toFixed(1) : '—', 410, currentY + 4);
           // Overall Avg
           doc.fillColor(PRIMARY_COLOR).font('Helvetica-Bold').fontSize(7.5).text(dept.overallAvg ? dept.overallAvg.toFixed(1) : '—', 480, currentY + 4);
 
-          currentY += 17;
+          currentY += 16;
         });
       }
 
-      currentY += 15;
+      currentY += 14;
     }
 
     // -------------------------------------------------------------------------
     // 3. Most Logged Wellbeing Score Section
     // -------------------------------------------------------------------------
-    if (currentY <= 670 && (!data.sections || data.sections.summary !== false)) {
+    if (currentY <= 680 && (!data.sections || data.sections.summary !== false)) {
       doc.strokeColor(CARD_BORDER).lineWidth(0.8).moveTo(45, currentY).lineTo(550, currentY).stroke();
-      currentY += 12;
+      currentY += 10;
 
       let maxEntry = data.distribution && data.distribution.length > 0 ? data.distribution[0] : null;
       if (data.distribution) {
@@ -631,19 +639,19 @@ export const generateAdminReportPDF = (
         });
       }
 
-      doc.fillColor(PRIMARY_COLOR).font('Helvetica-Bold').fontSize(10).text('Most Logged Wellbeing Score', 45, currentY);
-      doc.fillColor(SECONDARY_COLOR).font('Helvetica').fontSize(7.5).text('The individual rating number logged most frequently across check-in submissions', 45, currentY + 12);
-      currentY += 24;
+      doc.fillColor(PRIMARY_COLOR).font('Helvetica-Bold').fontSize(9.5).text('Most Logged Wellbeing Score', 45, currentY);
+      doc.fillColor(SECONDARY_COLOR).font('Helvetica').fontSize(7.2).text('The individual rating number logged most frequently across check-in submissions', 45, currentY + 11);
+      currentY += 22;
 
       if (!maxEntry || maxEntry.count === 0) {
         doc.fillColor(MUTED_COLOR).font('Helvetica').fontSize(8).text('No check-in submissions recorded in this period.', 45, currentY);
-        currentY += 18;
+        currentY += 16;
       } else {
-        doc.roundedRect(45, currentY, 505, 36, 6).fillAndStroke(CARD_BG, CARD_BORDER);
-        doc.fillColor(BRAND_BLUE).font('Helvetica-Bold').fontSize(18).text(`${maxEntry.name} / 10`, 55, currentY + 8);
-        doc.fillColor(PRIMARY_COLOR).font('Helvetica-Bold').fontSize(8.5).text(`Recorded ${maxEntry.count} times`, 125, currentY + 8);
-        doc.fillColor(SECONDARY_COLOR).font('Helvetica').fontSize(7.5).text('This rating represents the dominant weekly sentiment across all completed check-ins.', 125, currentY + 20);
-        currentY += 46;
+        doc.roundedRect(45, currentY, 505, 34, 6).fillAndStroke(CARD_BG, CARD_BORDER);
+        doc.fillColor(BRAND_BLUE).font('Helvetica-Bold').fontSize(16).text(`${maxEntry.name} / 10`, 55, currentY + 8);
+        doc.fillColor(PRIMARY_COLOR).font('Helvetica-Bold').fontSize(8).text(`Recorded ${maxEntry.count} times`, 120, currentY + 7);
+        doc.fillColor(SECONDARY_COLOR).font('Helvetica').fontSize(7).text('This rating represents the dominant weekly sentiment across all completed check-ins.', 120, currentY + 18);
+        currentY += 42;
       }
     }
 
@@ -653,19 +661,22 @@ export const generateAdminReportPDF = (
     if (!data.sections || data.sections.trends !== false) {
       doc.addPage();
 
-      doc.fillColor(BRAND_BLUE).rect(45, 45, 6, 26).fill();
-      doc.fillColor(PRIMARY_COLOR).font('Helvetica-Bold').fontSize(16).text('Trends, Boosters & Stressors', 60, 45);
+      const p2StartY = 45;
+      doc.fillColor(PRIMARY_COLOR).font('Helvetica-Bold').fontSize(15).text('Trends, Boosters & Stressors', 58, p2StartY, { width: 490 });
+      const p2SubY = doc.y + 3;
       doc.fillColor(SECONDARY_COLOR).font('Helvetica').fontSize(8.5).text(
         isSpecificDept
           ? `${data.departmentName} weekly trajectory and impact factors`
           : 'Longitudinal organizational mood trajectory and key impact drivers',
-        60,
-        62
+        58,
+        p2SubY,
+        { width: 490 }
       );
+      const p2LineY = doc.y + 6;
+      doc.fillColor(BRAND_BLUE).rect(45, p2StartY, 5, p2LineY - p2StartY).fill();
+      doc.strokeColor(CARD_BORDER).lineWidth(0.8).moveTo(45, p2LineY).lineTo(550, p2LineY).stroke();
 
-      doc.strokeColor(CARD_BORDER).lineWidth(0.8).moveTo(45, 82).lineTo(550, 82).stroke();
-
-      let p2Y = 95;
+      let p2Y = p2LineY + 14;
       doc.fillColor(PRIMARY_COLOR).font('Helvetica-Bold').fontSize(10).text('Weekly Mood Trajectory', 45, p2Y);
       doc.fillColor(MUTED_COLOR).font('Helvetica').fontSize(7.5).text('Aggregated weekly rating averages across all completed employee submissions', 45, p2Y + 12);
       p2Y += 26;
@@ -737,7 +748,7 @@ export const generateAdminReportPDF = (
 
     // =========================================================================
     // PAGE 3+: EMPLOYEE DETAILS BY DEPARTMENT
-    // (Explicitly showing: "their checkin how much for the month they have done")
+    // (CONTINUOUS, ELEGANT MULTI-DEPARTMENT FLOW - NO EMPTY PAGES!)
     // =========================================================================
     if (!data.sections || data.sections.employees !== false) {
       if (data.employeeDetails && data.employeeDetails.length > 0) {
@@ -750,65 +761,101 @@ export const generateAdminReportPDF = (
         }, {} as Record<string, EmpList>);
 
         const periods = data.reportPeriods || [];
-        const maxCols = Math.min(periods.length, 4); // Show up to 4 historical check-in periods
+        const maxCols = Math.min(periods.length, 4);
 
-        for (const dept of Object.keys(byDept).sort()) {
-          doc.addPage();
+        // Add ONE page for the start of the employee section
+        doc.addPage();
 
-          // Department Banner
-          doc.fillColor(BRAND_BLUE).rect(45, 45, 6, 26).fill();
-          doc.fillColor(PRIMARY_COLOR).font('Helvetica-Bold').fontSize(16).text(`Employee Details: ${dept}`, 60, 45);
-          doc.fillColor(SECONDARY_COLOR).font('Helvetica').fontSize(8.5).text(
-            `${byDept[dept].length} Total Team Members • Monthly Check-in Compliance & Historical Period Ratings`,
-            60,
-            62
+        const p3StartY = 45;
+        doc.fillColor(PRIMARY_COLOR).font('Helvetica-Bold').fontSize(15).text(
+          isSpecificDept
+            ? `${data.departmentName} Employee Check-in Details`
+            : 'Employee Check-in Records & Wellbeing Details',
+          58,
+          p3StartY,
+          { width: 490 }
+        );
+        const p3SubY = doc.y + 3;
+        doc.fillColor(SECONDARY_COLOR).font('Helvetica').fontSize(8.5).text(
+          `Individual check-in compliance and weekly ratings (${data.totalEmployees} total members across ${Object.keys(byDept).length} departments)`,
+          58,
+          p3SubY,
+          { width: 490 }
+        );
+        const p3LineY = doc.y + 6;
+        doc.fillColor(BRAND_BLUE).rect(45, p3StartY, 5, p3LineY - p3StartY).fill();
+        doc.strokeColor(CARD_BORDER).lineWidth(0.8).moveTo(45, p3LineY).lineTo(550, p3LineY).stroke();
+
+        let rowY = p3LineY + 12;
+
+        const renderEmployeeTableHeader = (y: number) => {
+          doc.fillColor(CARD_BG).rect(45, y, 505, 18).fill();
+          doc.fillColor(SECONDARY_COLOR).font('Helvetica-Bold').fontSize(7.2);
+          doc.text('Employee / Email', 55, y + 5);
+          doc.text('Month Check-ins', 185, y + 5);
+          doc.text('Month Avg', 270, y + 5);
+          doc.text('Overall', 320, y + 5);
+
+          const pStartX = 365;
+          const pWidth = 180 / Math.max(1, maxCols);
+          for (let i = 0; i < maxCols; i++) {
+            const p = periods[i];
+            const pLabel = p ? p.label.split(' - ')[0] : `P${i + 1}`;
+            doc.text(pLabel, pStartX + i * pWidth, y + 5, { width: pWidth, align: 'center' });
+          }
+
+          doc.strokeColor(CARD_BORDER).lineWidth(0.8).moveTo(45, y + 18).lineTo(550, y + 18).stroke();
+        };
+
+        const sortedDepts = Object.keys(byDept).sort();
+
+        for (const dept of sortedDepts) {
+          const deptEmps = byDept[dept];
+
+          // Check if we have room for the department header + table header + at least 1 employee row (~55pt)
+          if (rowY + 55 > 745) {
+            doc.addPage();
+            rowY = 50;
+          }
+
+          // Compact Department Header Band
+          doc.fillColor('#f1f5f9').rect(45, rowY, 505, 18).fill();
+          doc.fillColor(BRAND_BLUE).rect(45, rowY, 3, 18).fill();
+          doc.fillColor(PRIMARY_COLOR).font('Helvetica-Bold').fontSize(8).text(
+            `DEPARTMENT: ${dept.toUpperCase()} (${deptEmps.length} members)`,
+            55,
+            rowY + 5
           );
-
-          doc.strokeColor(CARD_BORDER).lineWidth(0.8).moveTo(45, 80).lineTo(550, 80).stroke();
-
-          let rowY = 92;
-
-          const renderEmployeeTableHeader = (y: number) => {
-            doc.fillColor(CARD_BG).rect(45, y, 505, 20).fill();
-            doc.fillColor(SECONDARY_COLOR).font('Helvetica-Bold').fontSize(7.2);
-            doc.text('Employee / Email', 55, y + 6);
-            doc.text('Month Check-ins', 185, y + 6);
-            doc.text('Month Avg', 270, y + 6);
-            doc.text('Overall', 320, y + 6);
-
-            // Period columns (newest to oldest or oldest to newest)
-            const pStartX = 365;
-            const pWidth = 180 / Math.max(1, maxCols);
-            for (let i = 0; i < maxCols; i++) {
-              const p = periods[i];
-              const pLabel = p ? p.label.split(' - ')[0] : `P${i + 1}`;
-              doc.text(pLabel, pStartX + i * pWidth, y + 6, { width: pWidth, align: 'center' });
-            }
-
-            doc.strokeColor(CARD_BORDER).lineWidth(0.8).moveTo(45, y + 20).lineTo(550, y + 20).stroke();
-          };
+          rowY += 19;
 
           renderEmployeeTableHeader(rowY);
-          rowY += 21;
+          rowY += 19;
 
-          byDept[dept].forEach((emp, index) => {
-            // Check for page break
-            if (rowY > 735) {
+          deptEmps.forEach((emp, index) => {
+            // Check for page overflow
+            if (rowY + 18 > 745) {
               doc.addPage();
-              doc.fillColor(BRAND_BLUE).rect(45, 45, 6, 20).fill();
-              doc.fillColor(PRIMARY_COLOR).font('Helvetica-Bold').fontSize(13).text(`Employee Details: ${dept} (Continued)`, 60, 48);
-              rowY = 75;
+              rowY = 50;
+              // Re-render continuation header on the new page
+              doc.fillColor('#f1f5f9').rect(45, rowY, 505, 18).fill();
+              doc.fillColor(BRAND_BLUE).rect(45, rowY, 3, 18).fill();
+              doc.fillColor(PRIMARY_COLOR).font('Helvetica-Bold').fontSize(8).text(
+                `DEPARTMENT: ${dept.toUpperCase()} (Continued)`,
+                55,
+                rowY + 5
+              );
+              rowY += 19;
               renderEmployeeTableHeader(rowY);
-              rowY += 21;
+              rowY += 19;
             }
 
             if (index % 2 === 0) {
-              doc.fillColor('#fafafa').rect(45, rowY, 505, 19).fill();
+              doc.fillColor('#fafafa').rect(45, rowY, 505, 18).fill();
             }
 
-            // Employee Name & Email (Two lines inside cell for maximum clarity)
+            // Employee Name & Email
             doc.fillColor(PRIMARY_COLOR).font('Helvetica-Bold').fontSize(7.5).text(emp.name, 55, rowY + 2, { width: 125, lineBreak: false });
-            doc.fillColor(MUTED_COLOR).font('Helvetica').fontSize(6.5).text(emp.email || '', 55, rowY + 11, { width: 125, lineBreak: false });
+            doc.fillColor(MUTED_COLOR).font('Helvetica').fontSize(6.5).text(emp.email || '', 55, rowY + 10, { width: 125, lineBreak: false });
 
             // Month Check-ins: "how much for the month they have done"
             const chkText = `${emp.thisMonthCheckins}/${emp.expectedThisMonth} (${emp.monthlyCompliance}%)`;
@@ -841,8 +888,11 @@ export const generateAdminReportPDF = (
               }
             }
 
-            rowY += 19;
+            rowY += 18;
           });
+
+          // Small spacing between departments
+          rowY += 8;
         }
       }
     }
