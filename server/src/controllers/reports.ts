@@ -92,31 +92,32 @@ export function getDateFilter(range?: string, start?: string, end?: string, tabl
 // --------------------------------------------------------------------------
 // 1. EMPLOYEE PERSONAL REPORT CONTROLLER
 // --------------------------------------------------------------------------
-export const requestEmployeeReport = async (req: AuthenticatedRequest, res: Response) => {
-  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
-
-  const { range, startDate, endDate } = req.body;
-  const userId = req.user.id;
-
+export const buildAndEmailEmployeeReport = async (
+  targetUserId: string,
+  recipientEmail: string,
+  range: string,
+  startDate?: string,
+  endDate?: string
+) => {
   try {
     const rangeLabel = getRangeLabel(range, startDate, endDate);
-    const filter = getDateFilter(range, startDate, endDate, 'm');
+    const filter = getDateFilter(range, startDate, endDate, 'm', 2);
 
-    // Fetch user details & department
-    const userProfile = await query(
-      `SELECT u.full_name, u.email, u.department_id, COALESCE(d.name, 'General') as department_name 
-       FROM users u
-       LEFT JOIN departments d ON u.department_id = d.id
-       WHERE u.id = $1`,
-      [userId]
-    );
+  // Fetch user details & department
+  const userProfile = await query(
+    `SELECT u.full_name, u.email, u.department_id, COALESCE(d.name, 'General') as department_name 
+     FROM users u
+     LEFT JOIN departments d ON u.department_id = d.id
+     WHERE u.id = $1`,
+    [targetUserId]
+  );
 
     if (userProfile.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
+      throw new Error('User not found');
     }
 
     const employeeName = userProfile.rows[0].full_name || 'Employee';
-    const employeeEmail = userProfile.rows[0].email || req.user.email;
+    const employeeEmail = userProfile.rows[0].email || recipientEmail;
     const departmentId = userProfile.rows[0].department_id;
     const departmentName = userProfile.rows[0].department_name;
 
@@ -124,7 +125,7 @@ export const requestEmployeeReport = async (req: AuthenticatedRequest, res: Resp
     const moodRes = await query(
       `SELECT AVG(mood_score) as avg_score FROM mood_entries m 
        WHERE m.user_id = $1 ${filter.clause}`,
-      [userId, ...filter.values]
+      [targetUserId, ...filter.values]
     );
     const avgScore = parseFloat(moodRes.rows[0]?.avg_score || '0');
     const moodIndex = avgScore > 0 ? parseFloat(avgScore.toFixed(1)) : 7.0;
@@ -146,7 +147,7 @@ export const requestEmployeeReport = async (req: AuthenticatedRequest, res: Resp
          COUNT(CASE WHEN created_at >= $2 AND created_at <= $3 THEN id END) as this_month_checkins
        FROM mood_entries
        WHERE user_id = $1`,
-      [userId, targetMonthStart, targetMonthEnd, prevMonthStart, prevMonthEnd]
+      [targetUserId, targetMonthStart, targetMonthEnd, prevMonthStart, prevMonthEnd]
     );
     const empStats = empStatsRes.rows[0];
     const thisMonthAvg = parseFloat(empStats?.this_month_avg || '0') || null;
@@ -162,7 +163,7 @@ export const requestEmployeeReport = async (req: AuthenticatedRequest, res: Resp
       `SELECT mood_score, COUNT(*) as count FROM mood_entries m 
        WHERE m.user_id = $1 ${filter.clause}
        GROUP BY mood_score`,
-      [userId, ...filter.values]
+      [targetUserId, ...filter.values]
     );
     const distribution = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1].map((score) => {
       const row = distRes.rows.find((r) => parseInt(r.mood_score) === score);
@@ -180,7 +181,7 @@ export const requestEmployeeReport = async (req: AuthenticatedRequest, res: Resp
        WHERE m.user_id = $1 ${filter.clause}
        GROUP BY DATE_TRUNC('week', m.created_at)::date
        ORDER BY date ASC`,
-      [userId, ...filter.values]
+      [targetUserId, ...filter.values]
     );
 
     // Top Feelings
@@ -192,7 +193,7 @@ export const requestEmployeeReport = async (req: AuthenticatedRequest, res: Resp
        WHERE m.user_id = $1 ${filter.clause}
        GROUP BY f.name
        ORDER BY count DESC LIMIT 5`,
-      [userId, ...filter.values]
+      [targetUserId, ...filter.values]
     );
 
     // Top Contributors
@@ -204,7 +205,7 @@ export const requestEmployeeReport = async (req: AuthenticatedRequest, res: Resp
        WHERE m.user_id = $1 ${filter.clause}
        GROUP BY c.name
        ORDER BY count DESC LIMIT 5`,
-      [userId, ...filter.values]
+      [targetUserId, ...filter.values]
     );
 
     // Department Benchmarks & Aggregated Context
@@ -254,7 +255,7 @@ export const requestEmployeeReport = async (req: AuthenticatedRequest, res: Resp
          WHERE u.department_id = $2 AND m.created_at >= NOW() - INTERVAL '8 weeks'
          GROUP BY DATE_TRUNC('week', m.created_at)::date
          ORDER BY date DESC LIMIT 5`,
-        [userId, departmentId]
+        [targetUserId, departmentId]
       );
 
       comparisonHistory = compRes.rows.map((row) => {
@@ -294,32 +295,68 @@ export const requestEmployeeReport = async (req: AuthenticatedRequest, res: Resp
       comparisonHistory,
     });
 
+    const targetMonthName = targetMonthStart.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+    const targetMonthShort = targetMonthStart.toLocaleDateString('en-IN', { month: 'short' });
+    const safeEmpName = employeeName.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const safeMonth = targetMonthShort + '_' + targetYear;
+    const filename = `${safeEmpName}_Wellbeing_Report_${safeMonth}.pdf`;
+
     await sendEmail({
-      to: req.user.email,
-      subject: `Your Wellbeing & Benchmark Report (${rangeLabel})`,
+      to: recipientEmail,
+      subject: `Wellbeing Report: ${employeeName} — ${targetMonthName} (${rangeLabel})`,
       html: buildEmailTemplate(
         'Your Wellbeing & Benchmark Report',
         `
         <p>Hi ${employeeName},</p>
-        <p>Your requested wellbeing insights and department benchmark report for <strong>${rangeLabel}</strong> is ready.</p>
-        <p>Please find the executive PDF report attached with your monthly check-in analytics and department standings.</p>
+        <p>The requested wellbeing insights and benchmark report for <strong>${employeeName}</strong> for <strong>${targetMonthName}</strong> (${rangeLabel}) is ready.</p>
+        <p>Please find the executive PDF report attached with your check-in analytics and department standings.</p>
       `
       ),
       emailType: 'Report',
       attachments: [
         {
           content: pdfBuffer,
-          filename: `Employee_Wellness_Report_${range || 'ytd'}.pdf`,
+          filename,
         },
       ],
     });
 
-    await query(
-      `INSERT INTO reports (user_id, type, date_range) VALUES ($1, 'employee', $2)`,
-      [userId, rangeLabel]
-    );
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const validUserId = uuidRegex.test(targetUserId) ? targetUserId : null;
+    if (validUserId) {
+      try {
+        await query(
+          `INSERT INTO reports (user_id, type, date_range, file_url) VALUES ($1, 'employee', $2, $3)`,
+          [validUserId, rangeLabel, filename]
+        );
+        await logAudit(validUserId, 'employee_report_sent', { range, rangeLabel });
+      } catch (dbErr) {
+        console.warn('Could not record employee report log:', dbErr);
+      }
+    }
 
-    await logAudit(userId, 'employee_report_sent', { range, rangeLabel });
+    return { pdfBuffer, filename };
+  } catch (error: any) {
+    console.error('Build employee report error:', error);
+    throw error;
+  }
+};
+
+export const requestEmployeeReport = async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const userId = req.user.id;
+    const userEmail = req.user.email;
+    const { range = 'ytd', startDate, endDate } = req.query;
+
+    await buildAndEmailEmployeeReport(
+      userId,
+      userEmail,
+      range as string,
+      startDate as string | undefined,
+      endDate as string | undefined
+    );
 
     res.json({ message: 'Personal wellbeing report generated and sent to your email successfully.' });
   } catch (error: any) {
@@ -341,6 +378,12 @@ export const buildAndEmailAdminReport = async (
   groupBy: 'weeks' | 'months' = 'weeks',
   options: any = null
 ) => {
+  // If the admin specifically requested an individual employee report:
+  if (options && (options.departments === 'employee' || options.departments === 'specific_employee') && options.employeeId) {
+    await buildAndEmailEmployeeReport(options.employeeId, userEmail, range, startDate, endDate);
+    return;
+  }
+
   const rangeLabel = getRangeLabel(range, startDate, endDate);
   const filter = getDateFilter(range, startDate, endDate, 'm');
 
@@ -375,6 +418,11 @@ export const buildAndEmailAdminReport = async (
   const targetMonthEnd = new Date(targetYear, targetMonth + 1, 0, 23, 59, 59, 999);
   const prevMonthStart = new Date(targetYear, targetMonth - 1, 1);
   const prevMonthEnd = new Date(targetYear, targetMonth, 0, 23, 59, 59, 999);
+
+  const targetMonthName = targetMonthStart.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+  const targetMonthShort = targetMonthStart.toLocaleDateString('en-IN', { month: 'short' });
+  const prevMonthName = prevMonthStart.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+  const prevMonthShort = prevMonthStart.toLocaleDateString('en-IN', { month: 'short' });
 
   // 2. Comparison averages: This Month / Last Month / Overall
   const compStatsRes = await query(
@@ -644,10 +692,11 @@ export const buildAndEmailAdminReport = async (
   let reportBuffer: Buffer;
   let filename = '';
 
+  const safeScope = isSpecificDept ? deptName.replace(/[^a-zA-Z0-9_-]/g, '_') : 'Organization';
+  const safeMonth = targetMonthShort + '_' + targetYear;
+
   if (exportType === 'pdf') {
-    filename = isSpecificDept
-      ? `${deptName}_Wellbeing_Report_${range}.pdf`
-      : `Admin_Wellness_Report_${range}.pdf`;
+    filename = `${safeScope}_Wellbeing_Report_${safeMonth}.pdf`;
 
     reportBuffer = await generateAdminReportPDF(rangeLabel, {
       departmentName: deptName,
@@ -677,12 +726,14 @@ export const buildAndEmailAdminReport = async (
       })),
       employeeDetails,
       reportPeriods,
+      targetMonthName,
+      targetMonthShort,
+      prevMonthName,
+      prevMonthShort,
       sections: options?.sections,
     });
   } else {
-    filename = isSpecificDept
-      ? `${deptName}_Wellbeing_Dataset_${range}.csv`
-      : `Admin_Wellness_Dataset_${range}.csv`;
+    filename = `${safeScope}_Wellbeing_Dataset_${safeMonth}.csv`;
 
     let csv = `Employee Wellness Index Report\n`;
     csv += `Scope,${deptName || 'Entire Organization'}\n`;
@@ -735,16 +786,17 @@ export const buildAndEmailAdminReport = async (
   // Send Email with generated report attachment
   await sendEmail({
     to: userEmail,
-    subject: `Wellbeing Export: ${deptName ? `${deptName} Department` : 'Organization'} (${rangeLabel})`,
+    subject: `Wellbeing Export: ${deptName ? `${deptName} Department` : 'Organization'} — ${targetMonthName} (${rangeLabel})`,
     html: buildEmailTemplate(
       'Wellbeing Analytics Report Ready',
       `
-      <p>The analytics and check-in compliance report for <strong>${deptName ? `${deptName} Department` : 'the Entire Organization'}</strong> (${rangeLabel}) is ready.</p>
+      <p>The analytics and check-in compliance report for <strong>${deptName ? `${deptName} Department` : 'the Entire Organization'}</strong> for <strong>${targetMonthName}</strong> (${rangeLabel}) is ready.</p>
       <p>Please find the exported <strong>${exportType.toUpperCase()}</strong> file attached.</p>
       <ul>
+        <li><strong>Evaluation Month:</strong> ${targetMonthName}</li>
         <li><strong>Wellbeing Index:</strong> ${moodIndex} / 10</li>
-        <li><strong>This Month Check-ins:</strong> ${monthCheckinsTotal} / ${monthExpectedTotal} (${monthComplianceRate}%)</li>
-        <li><strong>Active Employees This Month:</strong> ${monthActiveEmployees} of ${totalEmployees}</li>
+        <li><strong>${targetMonthShort} Check-ins Completed:</strong> ${monthCheckinsTotal} / ${monthExpectedTotal} (${monthComplianceRate}%)</li>
+        <li><strong>Active Employees in ${targetMonthShort}:</strong> ${monthActiveEmployees} of ${totalEmployees}</li>
       </ul>
     `
     ),

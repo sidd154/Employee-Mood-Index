@@ -62,10 +62,22 @@ export const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'overview' | 'departments' | 'employees' | 'reports' | 'settings' | 'users'>('overview');
   const [loading, setLoading] = useState(true);
 
-  const [exportModalState, setExportModalState] = useState({
+  const [exportModalState, setExportModalState] = useState<{
+    format: string;
+    departments: string;
+    deptId: string;
+    employeeId?: string;
+    sections: {
+      summary: boolean;
+      departments: boolean;
+      employees: boolean;
+      trends: boolean;
+    };
+  }>({
     format: 'pdf',
     departments: 'all',
     deptId: '',
+    employeeId: '',
     sections: {
       summary: true,
       departments: true,
@@ -237,7 +249,7 @@ export const AdminDashboard: React.FC = () => {
   };
 
   useEffect(() => {
-    if (activeTab === 'employees') {
+    if (activeTab === 'employees' || activeTab === 'reports') {
       fetchEmployees();
     }
   }, [activeTab, employeeSearch, selectedDeptFilter, selectedStartPeriod, selectedEndPeriod]);
@@ -1596,11 +1608,12 @@ export const AdminDashboard: React.FC = () => {
                       <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">3. Target Data Scope</label>
                       <select
                         value={exportModalState.departments}
-                        onChange={(e) => setExportModalState({...exportModalState, departments: e.target.value, deptId: ''})}
+                        onChange={(e) => setExportModalState({...exportModalState, departments: e.target.value, deptId: '', employeeId: ''})}
                         className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-xs text-white"
                       >
-                        <option value="all">Entire Organization</option>
+                        <option value="all">Entire Organization (All Departments & Employees)</option>
                         <option value="specific">Specific Department</option>
+                        <option value="employee">Specific Employee (Personal Wellbeing Report)</option>
                       </select>
                       
                       {exportModalState.departments === 'specific' && (
@@ -1612,6 +1625,21 @@ export const AdminDashboard: React.FC = () => {
                           <option value="" disabled>Select Department...</option>
                           {departments.map((d: any) => (
                             <option key={d.id} value={d.name}>{d.name}</option>
+                          ))}
+                        </select>
+                      )}
+
+                      {exportModalState.departments === 'employee' && (
+                        <select
+                          value={exportModalState.employeeId || ''}
+                          onChange={(e) => setExportModalState({...exportModalState, employeeId: e.target.value})}
+                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-xs text-white mt-2"
+                        >
+                          <option value="" disabled>Select Employee...</option>
+                          {employees.map((emp: any) => (
+                            <option key={emp.id} value={emp.id}>
+                              {emp.name} ({emp.department || 'General'}) — {emp.email}
+                            </option>
                           ))}
                         </select>
                       )}
@@ -1648,7 +1676,7 @@ export const AdminDashboard: React.FC = () => {
                       </div>
                       <button
                         onClick={handleExportModalSubmit}
-                        disabled={exportingWeek || (exportModalState.departments === 'specific' && !exportModalState.deptId)}
+                        disabled={exportingWeek || (exportModalState.departments === 'specific' && !exportModalState.deptId) || (exportModalState.departments === 'employee' && !exportModalState.employeeId)}
                         className="bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 text-white px-8 py-3 rounded-xl text-xs font-bold transition-all shadow-lg shadow-blue-500/20 flex items-center gap-2 cursor-pointer disabled:cursor-not-allowed"
                       >
                         {exportingWeek ? (
